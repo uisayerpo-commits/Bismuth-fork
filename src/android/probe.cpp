@@ -13,6 +13,8 @@
 #include <Geode/Geode.hpp>
 #include <Geode/modify/MenuLayer.hpp>
 
+#include "smoketest.hpp"
+
 #include <dlfcn.h>
 
 #include <chrono>
@@ -214,8 +216,19 @@ static void runProbe() {
     writeTextFile("gl_probe.txt", report);
     log::info("Bismuth GL probe:\n{}", report);
 
-    // Keep the popup text free of '<' and '>', the alert parses them as color tags
-    FLAlertLayer::create("Bismuth GL probe", report, "OK")->show();
+    // Tests the OpenGL ES version of the renderer design on this GPU. The report is
+    // rewritten after every step, so if the driver crashes the game the file shows where.
+    bool passed = false;
+    std::string smokeTest = runGlesSmokeTest(passed, [](const std::string& progress) {
+        writeTextFile("gles_smoketest.txt", progress);
+    });
+    writeTextFile("gles_smoketest.txt", smokeTest);
+    log::info("Bismuth GLES smoke test:\n{}", smokeTest);
+
+    // Short on purpose, the full text is in the files. The popup parses '<' and '>' as color tags.
+    std::string summary = std::string("Smoke test: ") + (passed ? "PASS" : "FAIL") +
+        "\n\nDetails are in gles_smoketest.txt and gl_probe.txt in the mod save folder.";
+    FLAlertLayer::create("Bismuth GLES test", summary, "OK")->show();
 }
 
 class $modify(BismuthProbeMenuLayer, MenuLayer) {
