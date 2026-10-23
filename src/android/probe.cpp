@@ -15,10 +15,14 @@
 
 #include <dlfcn.h>
 
+#include <chrono>
 #include <cstdio>
+#include <filesystem>
+#include <fstream>
 #include <set>
 #include <sstream>
 #include <string>
+#include <thread>
 
 using namespace geode::prelude;
 
@@ -183,20 +187,56 @@ static std::string buildReport() {
     return out.str();
 }
 
+// The files end up in the mod's save folder, so they can be read without logcat
+static void writeTextFile(const char* name, const std::string& text) {
+    std::error_code error;
+    auto directory = Mod::get()->getSaveDir();
+    std::filesystem::create_directories(directory, error);
+
+    std::ofstream file(directory / name, std::ios::trunc);
+    file << text;
+}
+
+// Proves the mod was loaded, even if nothing shows up on screen
+$on_mod(Loaded) {
+    writeTextFile("loaded.txt", "Bismuth Android probe loaded\n");
+    log::info("Bismuth Android probe loaded");
+}
+
+// Runs on the main thread, where the GL context is current
+static void runProbe() {
+    static bool done = false;
+    if (done)
+        return;
+    done = true;
+
+    std::string report = buildReport();
+    writeTextFile("gl_probe.txt", report);
+    log::info("Bismuth GL probe:\n{}", report);
+
+    // Keep the popup text free of '<' and '>', the alert parses them as color tags
+    FLAlertLayer::create("Bismuth GL probe", report, "OK")->show();
+}
+
 class $modify(BismuthProbeMenuLayer, MenuLayer) {
     bool init() {
         if (!MenuLayer::init())
             return false;
 
-        static bool shown = false;
-        if (!shown) {
-            shown = true;
-
-            std::string report = buildReport();
-            log::info("Bismuth GL probe:\n{}", report);
-
-            // Keep the popup text free of '<' and '>', the alert parses them as color tags
-            FLAlertLayer::create("Bismuth GL probe", report, "OK")->show();
+        /*
+            Showing the popup right here doesn't work: MenuLayer::init runs while the game is
+            still switching scenes, so the popup would be added to a scene that is about to go
+            away. Wait a few seconds and show it from the main thread instead.
+        */
+        static bool scheduled = false;
+        if (!scheduled) {
+            scheduled = true;
+            std::thread([] {
+                std::this_thread::sleep_for(std::chrono::seconds(4));
+                Loader::get()->queueInMainThread([] {
+                    runProbe();
+                });
+            }).detach();
         }
 
         return true;
