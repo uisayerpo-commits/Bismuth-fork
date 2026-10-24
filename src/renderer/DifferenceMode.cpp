@@ -6,6 +6,16 @@
 
 using namespace geode::prelude;
 
+#ifdef GEODE_ANDROID
+
+// The difference mode is a desktop debug view (it needs the window size API). It does nothing on Android.
+DifferenceMode::~DifferenceMode() {}
+void DifferenceMode::drawSceneHook() {}
+void DifferenceMode::prepare(u32, u32) {}
+void DifferenceMode::destroyFramebuffers() {}
+
+#else
+
 DifferenceMode::~DifferenceMode() {
     destroyFramebuffers();
 
@@ -133,3 +143,5 @@ class $modify(DifferenceModeCCDirector, CCDirector) {
         diffMode->drawSceneHook();
     }
 };
+
+#endif // GEODE_ANDROID

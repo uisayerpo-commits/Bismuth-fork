@@ -237,8 +237,10 @@ void decomp_GJBaseGameLayer::optimized_processRotationActions() {
 
         // I just couldn't figure out how to do this any other way
         float rendererRotation = rotation;
-        if (m_effectManager->m_unkMap770.find({ targetId, centerId }) != m_effectManager->m_unkMap770.end()) {
-            for (auto obj : m_effectManager->m_unkMap770[{ targetId, centerId }]) {
+        // find() and the iterator, operator[] with a pair key doesn't compile with Geode's STL on Android
+        auto unkMapIt = m_effectManager->m_unkMap770.find({ targetId, centerId });
+        if (unkMapIt != m_effectManager->m_unkMap770.end()) {
+            for (auto obj : unkMapIt->second) {
                 if (obj->m_someInterpValue1RelatedFalse)
                     continue;
                 if (staticGroup && staticGroup->count() != 0)

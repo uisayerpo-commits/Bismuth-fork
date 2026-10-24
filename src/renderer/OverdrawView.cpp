@@ -1,13 +1,29 @@
 #include "OverdrawView.hpp"
 #include "Geode/cocos/CCDirector.h"
 #include "Geode/cocos/base_nodes/CCNode.h"
+#ifndef GEODE_ANDROID
 #include "Geode/cocos/platform/win32/CCEGLView.h"
+#endif
 #include <common.hpp>
 #include "Geode/modify/Modify.hpp"
 #include "HotKey.hpp"
 #include "Renderer.hpp"
 
 using namespace geode::prelude;
+
+#ifdef GEODE_ANDROID
+
+// The overdraw view is a desktop debug view. It does nothing on Android.
+OverdrawView::OverdrawView(Renderer& renderer) : renderer(renderer) {}
+OverdrawView::~OverdrawView() {}
+void OverdrawView::init() {}
+void OverdrawView::predraw() {}
+void OverdrawView::postdraw() {}
+void OverdrawView::clear() {}
+void OverdrawView::finish() {}
+std::string OverdrawView::getDebugText() { return ""; }
+
+#else
 
 static OverdrawView* instance = nullptr;
 
@@ -169,3 +185,5 @@ DECLARE_HOTKEY(KEY_F4, {
     if (instance)
         instance->setEnabled(!instance->isEnabled());
 })
+
+#endif // GEODE_ANDROID

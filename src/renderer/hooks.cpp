@@ -167,8 +167,10 @@ class $modify(RendererGJBaseGameLayer, GJBaseGameLayer) {
                 continue;
 
             // Idk what the hell this does but sure
-            if (eman->m_unkMap770.find({ targetId, centerId }) != eman->m_unkMap770.end()) {
-                for (auto obj : eman->m_unkMap770[{ targetId, centerId }]) {
+            // find() and the iterator, operator[] with a pair key doesn't compile with Geode's STL on Android
+            auto unkMapIt = eman->m_unkMap770.find({ targetId, centerId });
+            if (unkMapIt != eman->m_unkMap770.end()) {
+                for (auto obj : unkMapIt->second) {
                     if (obj->m_someInterpValue1RelatedFalse)
                         continue;
                     if (staticGroup->count() != 0)
