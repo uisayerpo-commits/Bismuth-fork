@@ -6,6 +6,8 @@
 #include <vector>
 
 #include "Buffer.hpp"
+
+class Shader;
 #include "glm/fwd.hpp"
 #include "math/ConvexList.hpp"
 #include "ObjectUtils.hpp"
@@ -112,6 +114,13 @@ public:
     */
     bool finishWriting();
 
+    /*
+        Binds the texture with the raw sprites to the texture unit the vertex shader reads
+        it from. The shader that is going to draw has to be in use. Does nothing when the
+        raw sprites are in a buffer.
+    */
+    void bindRawSpriteTexture(Shader* shader);
+
     void draw(const LayerKey& layer);
 
     inline void bind() {
@@ -152,8 +161,11 @@ private:
     Buffer* preCulledSpritesBuffer = nullptr;
 
     // GPU buffers
-    Buffer* rawSpriteBuffer = nullptr;
+    Buffer* rawSpriteBuffer = nullptr; // not used when the raw sprites are in a texture
     Buffer* culledIndexBuffer = nullptr;
+
+    // Android: the raw sprites, written by the culling compute shader, read by the vertex shader
+    u32 rawSpriteTexture = 0;
 
     GPUTimer cullingComputeShaderTimer { "Culling compute shader time" };
 

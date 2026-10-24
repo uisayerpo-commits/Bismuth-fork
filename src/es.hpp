@@ -122,6 +122,8 @@ inline void (*BufferSubData)(unsigned, std::ptrdiff_t, std::ptrdiff_t, const voi
 inline void (*BufferData)(unsigned, std::ptrdiff_t, const void*, unsigned) = load<void (*)(unsigned, std::ptrdiff_t, const void*, unsigned)>("glBufferData");
 inline void (*BlendFuncSeparate)(unsigned, unsigned, unsigned, unsigned) = load<void (*)(unsigned, unsigned, unsigned, unsigned)>("glBlendFuncSeparate");
 inline void (*GenBuffers)(int, unsigned*) = load<void (*)(int, unsigned*)>("glGenBuffers");
+inline void (*TexStorage2D)(unsigned, int, unsigned, int, int) = load<void (*)(unsigned, int, unsigned, int, int)>("glTexStorage2D");
+inline void (*BindImageTexture)(unsigned, unsigned, int, unsigned char, int, unsigned, unsigned) = load<void (*)(unsigned, unsigned, int, unsigned char, int, unsigned, unsigned)>("glBindImageTexture");
 inline void (*DispatchCompute)(unsigned, unsigned, unsigned) = load<void (*)(unsigned, unsigned, unsigned)>("glDispatchCompute");
 inline void (*MemoryBarrier)(unsigned) = load<void (*)(unsigned)>("glMemoryBarrier");
 inline void (*DrawElementsIndirect)(unsigned, unsigned, const void*) = load<void (*)(unsigned, unsigned, const void*)>("glDrawElementsIndirect");
@@ -255,6 +257,10 @@ inline void (*GetBufferSubData)(unsigned, std::ptrdiff_t, std::ptrdiff_t, void*)
 #define glBlendFuncSeparate (*es::BlendFuncSeparate)
 #undef glGenBuffers
 #define glGenBuffers (*es::GenBuffers)
+#undef glTexStorage2D
+#define glTexStorage2D (*es::TexStorage2D)
+#undef glBindImageTexture
+#define glBindImageTexture (*es::BindImageTexture)
 #undef glDispatchCompute
 #define glDispatchCompute (*es::DispatchCompute)
 #undef glMemoryBarrier
@@ -331,6 +337,15 @@ inline void (*GetBufferSubData)(unsigned, std::ptrdiff_t, std::ptrdiff_t, void*)
 #endif
 #ifndef GL_RED
 #define GL_RED 0x1903
+#endif
+#ifndef GL_RGBA32F
+#define GL_RGBA32F 0x8814
+#endif
+#ifndef GL_WRITE_ONLY
+#define GL_WRITE_ONLY 0x88B9
+#endif
+#ifndef GL_TEXTURE_FETCH_BARRIER_BIT
+#define GL_TEXTURE_FETCH_BARRIER_BIT 0x00000008
 #endif
 #ifndef GL_STENCIL_INDEX
 #define GL_STENCIL_INDEX 0x1901

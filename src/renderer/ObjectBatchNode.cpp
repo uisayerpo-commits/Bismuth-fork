@@ -34,6 +34,7 @@ void ObjectBatchNode::draw() {
     else
         glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 
+    renderer->getObjectBatch().bindRawSpriteTexture(shader);
     renderer->getObjectBatch().draw(layerId);
 
     renderer->finishDraw();

@@ -119,7 +119,8 @@ bool bgl::init() {
     // Everything the renderer calls that OpenGL ES 3.0 doesn't have
     bool complete = es::DispatchCompute && es::MemoryBarrier && es::DrawElementsIndirect &&
                     es::BindBufferBase && es::MapBufferRange && es::UnmapBuffer &&
-                    es::VertexAttribIPointer && es::GenVertexArrays && es::BindVertexArray;
+                    es::VertexAttribIPointer && es::GenVertexArrays && es::BindVertexArray &&
+                    es::TexStorage2D && es::BindImageTexture;
     if (!complete) {
         log::error("the graphics driver is missing OpenGL ES functions the renderer needs. Falling back to the vanilla renderer");
         return false;

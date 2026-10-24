@@ -28,13 +28,35 @@ STORAGE_BUFFER(DRAW_COMMAND_BUFFER_BINDING) DrawCommandBuffer {
     DrawCommand u_drawCommands[];
 };
 
+//// RAW SPRITE OUTPUT ////
+#ifdef RAW_SPRITES_IN_TEXTURE
+layout (rgba32f, binding = 0) writeonly uniform highp image2D u_rawSpriteImage;
+
+void writeRawSpriteTexel(uint texel, vec4 value) {
+    imageStore(u_rawSpriteImage, ivec2(int(texel % RAW_SPRITE_TEXTURE_WIDTH), int(texel / RAW_SPRITE_TEXTURE_WIDTH)), value);
+}
+
+void writeRawSprite(uint spriteIndex, vec4 color, vec2 position, mat2 localTransform) {
+    uint first = spriteIndex * RAW_SPRITE_TEXELS;
+    writeRawSpriteTexel(first,      color);
+    writeRawSpriteTexel(first + 1u, vec4(position, localTransform[0]));
+    writeRawSpriteTexel(first + 2u, vec4(localTransform[1], 0.0, 0.0));
+}
+#else
+void writeRawSprite(uint spriteIndex, vec4 color, vec2 position, mat2 localTransform) {
+    u_rawSprites[spriteIndex].position = position;
+    u_rawSprites[spriteIndex].localTransform = localTransform;
+    u_rawSprites[spriteIndex].color = color;
+}
+#endif
+
 //// GLOBALS ////
 uint objectFlags;
 uint objectIndex;
 uint spriteType;
 vec2 objectPosition;
 vec2 vertexOffset;
-uint culledIndexBufferOutputIndex = 0;
+uint culledIndexBufferOutputIndex = 0u;
 
 //// HELPER FUNCTION PREDECLARATIONS ////
 bool isObjectOnScreen();
@@ -58,22 +80,22 @@ void processSprite(uint spriteIndex) {
     
     ObjectInfo object = u_objects[sprite.objectIndex];
 
-    objectFlags = object.flags;
+    objectFlags = uint(object.flags);
 
     //// APPLY LOCAL TRANSFORM ////
     mat2 objectLocalTransform = mat2(1.0);
 
-    if ((objectFlags & OBJECT_FLAG_IS_STATIC_OBJECT) == 0)
+    if ((objectFlags & OBJECT_FLAG_IS_STATIC_OBJECT) == 0u)
         objectLocalTransform = state.localTransform;
 
     if (object.rotationSpeed != 0.0) // TODO: Just supply rotation speed in radians instead
-        objectLocalTransform = rotationMatrix(-object.rotationSpeed * u_timer / 180 * PI) * objectLocalTransform;
+        objectLocalTransform = rotationMatrix(-object.rotationSpeed * u_timer / 180.0 * PI) * objectLocalTransform;
 
-    if ((objectFlags & OBJECT_FLAG_USES_AUDIO_SCALE) != 0)
+    if ((objectFlags & OBJECT_FLAG_USES_AUDIO_SCALE) != 0u)
         objectLocalTransform = scaleMatrix(calculateAudioScale()) * objectLocalTransform;
 
     //// CALCULATE OBJECT COLOR ////
-    uint colorChannel = 0;
+    uint colorChannel = 0u;
 
     spriteType = sprite.spriteType;
 
@@ -81,7 +103,7 @@ void processSprite(uint spriteIndex) {
     case SPRITE_TYPE_GLOW:
     case SPRITE_TYPE_BASE:   colorChannel = object.baseColorChannelId; break;
     case SPRITE_TYPE_DETAIL: colorChannel = object.detailColorChannelId; break;
-    case SPRITE_TYPE_BLACK:  colorChannel = COLOR_CHANNEL_BLACK; break;
+    case SPRITE_TYPE_BLACK:  colorChannel = uint(COLOR_CHANNEL_BLACK); break;
     }
 
     // Reading outside of the buffer can hang the GPU driver
@@ -89,15 +111,15 @@ void processSprite(uint spriteIndex) {
 
     vec4 color = RGBA_TO_VEC4(u_channelColors[colorChannel]);
 
-    if (spriteType == SPRITE_TYPE_GLOW && (objectFlags & OBJECT_FLAG_SPECIAL_GLOW_COLOR) != 0)
+    if (spriteType == SPRITE_TYPE_GLOW && (objectFlags & OBJECT_FLAG_SPECIAL_GLOW_COLOR) != 0u)
         color = vec4(u_specialLightBGColor, 1.0);
     
-    if ((objectFlags & OBJECT_FLAG_IS_INVISIBLE_BLOCK) != 0)
+    if ((objectFlags & OBJECT_FLAG_IS_INVISIBLE_BLOCK) != 0u)
         color = calculateInvisibleBlockColorAndOpacity(color);
 
-    if (spriteType == SPRITE_TYPE_BASE && (objectFlags & OBJECT_FLAG_HAS_BASE_HSV) != 0) {
+    if (spriteType == SPRITE_TYPE_BASE && (objectFlags & OBJECT_FLAG_HAS_BASE_HSV) != 0u) {
         color = applyHSV(object.baseHSV, color);
-    } else if (spriteType == SPRITE_TYPE_DETAIL && (objectFlags & OBJECT_FLAG_HAS_DETAIL_HSV) != 0) {
+    } else if (spriteType == SPRITE_TYPE_DETAIL && (objectFlags & OBJECT_FLAG_HAS_DETAIL_HSV) != 0u) {
         color = applyHSV(object.detailHSV, color);
     }
 
@@ -108,9 +130,7 @@ void processSprite(uint spriteIndex) {
         return;
 
     //// SAVE DATA INTO RAW SPRITE BUFFER ////
-    u_rawSprites[spriteIndex].position = objectPosition;
-    u_rawSprites[spriteIndex].localTransform = objectLocalTransform;
-    u_rawSprites[spriteIndex].color = color;
+    writeRawSprite(spriteIndex, color, objectPosition, objectLocalTransform);
 
     //// WRITE THE SPRITE INDICIES ////
     uint indexEnd = sprite.indexStart + sprite.indexCount;
@@ -147,7 +167,7 @@ bool isObjectOnScreen() {
 
     vec2 screenPos = vec2(dot(u_cameraRight, offset), dot(u_cameraUp, offset));
 
-    const float leeway = 100;
+    const float leeway = 100.0;
 
     return screenPos.x >= -leeway &&
            screenPos.x <= u_cameraSize.x + leeway &&
@@ -157,14 +177,14 @@ bool isObjectOnScreen() {
 
 float calculateAudioScale() {
     float scale;
-    if ((objectFlags & OBJECT_FLAG_CUSTOM_AUDIO_SCALE) != 0) {
+    if ((objectFlags & OBJECT_FLAG_CUSTOM_AUDIO_SCALE) != 0u) {
         float minScale = u_objects[objectIndex].audioScaleMin;
         float maxScale = u_objects[objectIndex].audioScaleMax;
         scale = (u_audioScale - 0.1) * (maxScale - minScale) + minScale;
     } else
         scale = u_audioScale;
 
-    if ((objectFlags & OBJECT_FLAG_IS_ORB) != 0)
+    if ((objectFlags & OBJECT_FLAG_IS_ORB) != 0u)
         scale = min(scale + 0.3, 1.2);
     return scale;
 }
@@ -210,7 +230,7 @@ vec2 calculateInvisibleBlockOpacity() {
 }
 
 vec4 calculateInvisibleBlockColorAndOpacity(vec4 color) {
-    if ((u_gameStateFlags & GAME_STATE_IS_PLAYER_DEAD) != 0) {
+    if ((u_gameStateFlags & GAME_STATE_IS_PLAYER_DEAD) != 0u) {
         if (spriteType == SPRITE_TYPE_GLOW)
             return vec4(u_specialLightBGColor, color.a);
         return color;

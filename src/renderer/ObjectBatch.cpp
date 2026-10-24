@@ -1,4 +1,5 @@
 #include "ObjectBatch.hpp"
+#include "Shader.hpp"
 #include "BProfiler.hpp"
 #include "Renderer.hpp"
 #include "SpriteMeshDictionary.hpp"
@@ -7,6 +8,7 @@
 #include "math/ConvexList.hpp"
 #include "math/ConvexPolygon.hpp"
 #include <culling/SpriteDrawMap.hpp>
+#include <algorithm>
 #include <string>
 #include "../profiler.hpp"
 
@@ -35,7 +37,75 @@ void ObjectBatch::destroyBuffers() {
         *buffer = nullptr;
     }
 
+    if (rawSpriteTexture) {
+        glDeleteTextures(1, &rawSpriteTexture);
+        rawSpriteTexture = 0;
+    }
+
     sortedBatch.reset();
+}
+
+#ifdef GEODE_ANDROID
+
+// The unit the vertex shader reads the raw sprites from, no other code in the game uses it
+static constexpr u32 RAW_SPRITE_TEXTURE_UNIT = 15;
+
+/*
+    Creates the texture the culling compute shader writes the raw sprites into
+    (RAW_SPRITE_TEXELS RGBA32F texels per sprite, see headers/shared.h).
+    Returns 0 if that failed.
+*/
+static u32 createRawSpriteTexture(usize spriteCount) {
+    usize texels = std::max<usize>(spriteCount, 1) * RAW_SPRITE_TEXELS;
+    i32 width  = RAW_SPRITE_TEXTURE_WIDTH;
+    i32 height = (i32)((texels + width - 1) / width);
+
+    i32 maxSize = 0;
+    glGetIntegerv(GL_MAX_TEXTURE_SIZE, &maxSize);
+    if (height > maxSize) {
+        log::error("too many sprites for the raw sprite texture ({} x {} texels, the GPU supports {})", width, height, maxSize);
+        return 0;
+    }
+
+    while (glGetError() != GL_NO_ERROR) {}
+
+    u32 texture = 0;
+    glGenTextures(1, &texture);
+
+    glActiveTexture(GL_TEXTURE0 + RAW_SPRITE_TEXTURE_UNIT);
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA32F, width, height);
+    // Without these the texture is "incomplete" (it has no mipmaps) and reads give zeros
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glActiveTexture(GL_TEXTURE0);
+
+    GLenum error = glGetError();
+    if (error != GL_NO_ERROR) {
+        log::error("failed to create the raw sprite texture ({} x {} texels), GL error: 0x{:x}", width, height, (u32)error);
+        glDeleteTextures(1, &texture);
+        return 0;
+    }
+
+    return texture;
+}
+
+#endif
+
+void ObjectBatch::bindRawSpriteTexture(Shader* shader) {
+    #ifdef GEODE_ANDROID
+    if (!rawSpriteTexture)
+        return;
+
+    glActiveTexture(GL_TEXTURE0 + RAW_SPRITE_TEXTURE_UNIT);
+    glBindTexture(GL_TEXTURE_2D, rawSpriteTexture);
+    glActiveTexture(GL_TEXTURE0);
+
+    shader->setInt(shader->location("u_rawSpriteTexture"), RAW_SPRITE_TEXTURE_UNIT);
+    #endif
 }
 
 SpriteVertexTransforms ObjectBatch::getSpriteVertexTransform(
@@ -249,11 +319,19 @@ bool ObjectBatch::finishWriting() {
     inputSpriteBuffer      = Buffer::createStaticDraw("Input sprite buffer", inputSprites.data(), inputSprites.size() * sizeof(InputSprite));
     preCulledSpritesBuffer = Buffer::createStaticDraw("Pre-culled sprites buffer", preCulledSprites.data(), preCulledSprites.size() * sizeof(PreCulledSprite));
 
-    rawSpriteBuffer   = Buffer::createGPUExclusive("Raw sprite buffer", inputSprites.size() * sizeof(RawSprite));
     culledIndexBuffer = Buffer::createGPUExclusive("Culled index buffer", indexCount * sizeof(u32));
 
+    #ifdef GEODE_ANDROID
+    // Vertex shaders can't read storage buffers on Mali GPUs, so the raw sprites go into a texture
+    rawSpriteTexture = createRawSpriteTexture(inputSprites.size());
+    bool rawSpritesCreated = rawSpriteTexture != 0;
+    #else
+    rawSpriteBuffer = Buffer::createGPUExclusive("Raw sprite buffer", inputSprites.size() * sizeof(RawSprite));
+    bool rawSpritesCreated = rawSpriteBuffer != nullptr;
+    #endif
+
     bool success = vertexBuffer && indexBuffer && inputSpriteBuffer &&
-                   preCulledSpritesBuffer && rawSpriteBuffer && culledIndexBuffer;
+                   preCulledSpritesBuffer && rawSpritesCreated && culledIndexBuffer;
 
     if (success) {
         spriteSorter.sortForCurrentBlendingStates();
@@ -342,7 +420,12 @@ void ObjectBatch::predraw() {
         what the draw calls see is undefined (flickering, missing objects
         or even GPU hangs, depending on the driver).
     */
-    bgl::memoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT | GL_ELEMENT_ARRAY_BARRIER_BIT | GL_COMMAND_BARRIER_BIT);
+    GLbitfield barriers = GL_SHADER_STORAGE_BARRIER_BIT | GL_ELEMENT_ARRAY_BARRIER_BIT | GL_COMMAND_BARRIER_BIT;
+    #ifdef GEODE_ANDROID
+    // The raw sprites are written with imageStore and read with texelFetch
+    barriers |= GL_TEXTURE_FETCH_BARRIER_BIT;
+    #endif
+    bgl::memoryBarrier(barriers);
 
     cullingComputeShaderTimer.stop();
     PROFILER_POP();
@@ -351,7 +434,12 @@ void ObjectBatch::predraw() {
 void ObjectBatch::prepareCullingComputeShader() {
     indexBuffer->bindAsStorageBuffer(INPUT_INDEX_BUFFER_BINDING);
     inputSpriteBuffer->bindAsStorageBuffer(INPUT_SPRITE_BUFFER_BINDING);
+    #ifdef GEODE_ANDROID
+    // The compute shader writes the raw sprites into the texture with imageStore
+    glBindImageTexture(0, rawSpriteTexture, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA32F);
+    #else
     rawSpriteBuffer->bindAsStorageBuffer(RAW_SPRITE_BUFFER_BINDING);
+    #endif
     culledIndexBuffer->bindAsStorageBuffer(CULLED_INDEX_BUFFER_BINDING);
     preCulledSpritesBuffer->bindAsStorageBuffer(PRE_CULLED_SPRITE_BUFFER_BINDING);
 }

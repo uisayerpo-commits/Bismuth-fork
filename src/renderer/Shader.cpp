@@ -320,6 +320,10 @@ static u32 createShaderProgram(const std::vector<u32>& shaders) {
 
 static inline std::string generatePreCode(std::map<std::string, std::string> macroVariables) {
     std::string preCode = "#define GLSL\n";
+    #ifdef GEODE_ANDROID
+    // No storage buffers in the vertex shader on these GPUs, see headers/shared.h
+    preCode += "#define RAW_SPRITES_IN_TEXTURE\n";
+    #endif
     for (auto [k, v] : macroVariables)
         preCode += "#define " + k + " " + v + "\n";
     return preCode;

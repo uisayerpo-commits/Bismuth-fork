@@ -48,10 +48,10 @@ struct alignas(4) RGBA { u8 r, g, b, a; };
 
 #define RGBA uint
 #define RGBA_TO_VEC4(V) vec4( \
-    float((V) & 0xff) / 255.0, \
-    float(((V) >> 8) & 0xff) / 255.0, \
-    float(((V) >> 16) & 0xff) / 255.0, \
-    float(((V) >> 24) & 0xff) / 255.0 \
+    float((V) & 0xffu) / 255.0, \
+    float(((V) >> 8) & 0xffu) / 255.0, \
+    float(((V) >> 16) & 0xffu) / 255.0, \
+    float(((V) >> 24) & 0xffu) / 255.0 \
 )
 #define BitmapThing uint
 
@@ -79,15 +79,15 @@ mat2 rotationMatrix(float angleInRadians) {
 
 mat2 scaleMatrix(float scale) {
     return mat2(
-        scale, 0,
-        0, scale
+        scale, 0.0,
+        0.0, scale
     );
 }
 
-#define BITMAP_GET(B, I) ( ( (B)[(I) >> 5] >> ((I) & 0x1f) ) & 1 )
+#define BITMAP_GET(B, I) ( ( (B)[(I) >> 5] >> ((I) & 0x1fu) ) & 1u )
 
-#define GET_LOW16(V)  ( (V)       & 0xffff )
-#define GET_HIGH16(V) ( (V >> 16) & 0xffff )
+#define GET_LOW16(V)  ( (V)       & 0xffffu )
+#define GET_HIGH16(V) ( (V >> 16) & 0xffffu )
 
 #define GLSL_ONLY(D) D
 #define CPP_ONLY(D)
@@ -107,6 +107,19 @@ mat2 scaleMatrix(float scale) {
     one lane of every wave/warp idle.
 */
 #define CULLING_LOCAL_SIZE 64
+
+/*
+    OpenGL ES GPUs like the Mali ones can't read shader storage buffers in the vertex shader
+    (GL_MAX_VERTEX_SHADER_STORAGE_BLOCKS is 0). When RAW_SPRITES_IN_TEXTURE is defined (Android)
+    the raw sprites are written by the culling compute shader into an RGBA32F texture with
+    imageStore, and read by the vertex shader with texelFetch. Every raw sprite is
+    RAW_SPRITE_TEXELS texels, texel number N is at (N % WIDTH, N / WIDTH):
+        texel 0: color
+        texel 1: position (xy), local transform first column (zw)
+        texel 2: local transform second column (xy), unused (zw)
+*/
+#define RAW_SPRITE_TEXTURE_WIDTH 4096u
+#define RAW_SPRITE_TEXELS        3u
 
 ////////////////////////////////////////////////////
 //// UNIFORM BUFFERS AND SHADER STORAGE BUFFERS ////

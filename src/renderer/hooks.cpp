@@ -253,6 +253,7 @@ class $modify(RendererGJBaseGameLayer, GJBaseGameLayer) {
     }
 };
 
+#ifndef GEODE_ANDROID
 #include <Geode/modify/CCDisplayLinkDirector.hpp>
 class $modify(RendererCCDisplayLinkDirector, CCDisplayLinkDirector) {
     void mainLoop() {
@@ -269,3 +270,4 @@ class $modify(RendererCCDisplayLinkDirector, CCDisplayLinkDirector) {
         BProfiler::frameEnd();
     }
 };
+#endif // GEODE_ANDROID
