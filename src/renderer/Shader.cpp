@@ -1,15 +1,17 @@
 #include "Shader.hpp"
-#include "Geode/cocos/platform/win32/CCGL.h"
+#include <common.hpp>
 #include "common.hpp"
-#include "glslang/MachineIndependent/Versions.h"
 
 #include <Geode/Geode.hpp>
 #include <vector>
-
-#include <glslang/Public/ShaderLang.h>
-#include <SPIRV/GlslangToSpv.h>
 #include <optional>
 #include <memory>
+
+#ifndef GEODE_ANDROID
+#include "glslang/MachineIndependent/Versions.h"
+#include <glslang/Public/ShaderLang.h>
+#include <SPIRV/GlslangToSpv.h>
+#endif
 
 using namespace geode;
 
@@ -34,6 +36,79 @@ void printErrorLog(std::string str) {
     if (*start != 0)
         log::error("    {}", start);
 }
+
+#ifdef GEODE_ANDROID
+
+/*
+    There is no glslang on Android. The shaders only use #include (and glslang was
+    only there to expand it), so it is done by hand. The shared headers guard
+    themselves with #ifndef, the driver's preprocessor takes care of repeated includes.
+*/
+enum EShLanguage { EShLangVertex, EShLangFragment, EShLangCompute };
+
+static bool expandIncludes(const std::string& code, std::string& out, int depth) {
+    if (depth > 16) {
+        log::error("shader includes are nested too deeply");
+        return false;
+    }
+
+    usize position = 0;
+    while (position < code.size()) {
+        usize lineEnd = code.find('\n', position);
+        if (lineEnd == std::string::npos)
+            lineEnd = code.size();
+
+        std::string_view line(code.data() + position, lineEnd - position);
+        position = lineEnd + 1;
+
+        usize first = line.find_first_not_of(" \t");
+        std::string_view trimmed = first == std::string_view::npos ? std::string_view() : line.substr(first);
+
+        if (trimmed.starts_with("#include") && trimmed.find('<') != std::string_view::npos) {
+            // #include <common.hpp> and such, inside the C++ only part of shared.h
+            out += "\n";
+        } else if (trimmed.starts_with("#include")) {
+            usize open  = trimmed.find('"');
+            usize close = open == std::string_view::npos ? open : trimmed.find('"', open + 1);
+            if (close == std::string_view::npos) {
+                log::error("invalid #include in shader: {}", std::string(trimmed));
+                return false;
+            }
+
+            std::string headerName(trimmed.substr(open + 1, close - open - 1));
+            auto header = readResourceFile(headerName);
+            if (!header) {
+                log::error("could not include header file at: {}", headerName);
+                return false;
+            }
+
+            if (!expandIncludes(header.value(), out, depth + 1))
+                return false;
+            out += "\n";
+        } else if (trimmed.starts_with("#extension GL_ARB_shading_language_include")) {
+            out += "\n"; // desktop only
+        } else {
+            out.append(line);
+            out += "\n";
+        }
+    }
+    return true;
+}
+
+static std::optional<std::string> preprocessShader(EShLanguage stage, const std::string& code, const std::string& name) {
+    std::string expanded;
+    if (!expandIncludes(code, expanded, 0)) {
+        log::error("failed to expand the includes of shader '{}'", name);
+        return std::nullopt;
+    }
+
+    // OpenGL ES shaders need default precisions, desktop GLSL doesn't
+    return fmt::format("#version {} es\n", bgl::glslVersion()) +
+        "precision highp float;\nprecision highp int;\nprecision highp sampler2D;\n" +
+        expanded;
+}
+
+#else // desktop
 
 /*
     This is the main reason to use glslang. It is
@@ -130,6 +205,9 @@ static std::optional<std::string> preprocessShader(EShLanguage stage, const std:
     return fmt::format("#version {}\n", bgl::glslVersion()) + codeOut;
 }
 
+
+#endif // GEODE_ANDROID
+
 static std::optional<std::string> preprocessShader(const fs::path& path, std::string preCode, EShLanguage stage) {
     auto source = readResourceFile(path);
     if (!source) {
@@ -143,7 +221,9 @@ static std::optional<std::string> preprocessShader(const fs::path& path, std::st
     return shader.value();
 }
 
+#ifndef GL_COMPUTE_SHADER
 #define GL_COMPUTE_SHADER 0x91B9
+#endif
 
 static std::string getShaderInfoLog(u32 shader) {
     i32 length = 0;
@@ -387,6 +467,7 @@ void Shader::setTextureArray(u32 location, i32 count, cocos2d::CCTexture2D** tex
 }
 
 // A bunch of bs required to compile with glslang, idk why
+#ifndef GEODE_ANDROID
 static TBuiltInResource getDefaultResources() {
     TBuiltInResource resources;
 
@@ -495,3 +576,4 @@ static TBuiltInResource getDefaultResources() {
 
     return resources;
 }
+#endif // GEODE_ANDROID

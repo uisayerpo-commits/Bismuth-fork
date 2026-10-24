@@ -1,7 +1,9 @@
 #pragma once
 
 #include "Geode/cocos/cocoa/CCGeometry.h"
+#ifndef GEODE_ANDROID
 #include "Geode/cocos/platform/win32/CCGL.h"
+#endif
 #include "ccTypes.h"
 #include "glm/fwd.hpp"
 #include <cstring>
@@ -10,6 +12,9 @@
 #include <chrono>
 #include <memory>
 #include <stdint.h>
+
+// On Android this is where the OpenGL ES functions get loaded (see es.hpp)
+#include "es.hpp"
 
 #ifdef __GNUC__
 #define PACKED( __Declaration__ ) __Declaration__ __attribute__((__packed__))
@@ -79,6 +84,51 @@ inline bool isIntelGPU() {
     return strcmp((const char*)glGetString(GL_VENDOR), "Intel") == 0;
 }
 
+#ifdef GEODE_ANDROID
+
+#ifndef APIENTRY
+#define APIENTRY
+#endif
+
+/*
+    The pieces of OpenGL 4.3 the renderer uses that are not in OpenGL ES 3.1 core's
+    function names, wrapped so the rest of the code is the same on both platforms.
+*/
+namespace bgl {
+    inline void dispatchCompute(GLuint x, GLuint y, GLuint z) {
+        glDispatchCompute(x, y, z);
+    }
+
+    inline void memoryBarrier(GLbitfield barriers) {
+        glMemoryBarrier(barriers);
+    }
+
+    /*
+        OpenGL ES has no glMultiDrawElementsIndirect (GL_EXT_multi_draw_indirect is missing
+        on the Mali GPUs). This does the same thing with one glDrawElementsIndirect per command.
+    */
+    inline void multiDrawElementsIndirect(GLenum mode, GLenum type, const void* indirect, GLsizei drawCount, GLsizei stride) {
+        if (stride == 0)
+            stride = 5 * sizeof(unsigned int);
+
+        const char* commands = static_cast<const char*>(indirect);
+        for (GLsizei i = 0; i < drawCount; i++)
+            glDrawElementsIndirect(mode, type, commands + (usize)i * stride);
+    }
+
+    /*
+        Checks that the current context can run the renderer (OpenGL ES 3.1 with
+        compute shaders and indirect drawing). Needs a current GL context.
+        Logs the reason when it fails.
+    */
+    bool init();
+
+    // The version of the '#version' line of the shaders (310 es)
+    u32 glslVersion();
+}
+
+#else
+
 #define GL_BUFFER 0x82E0
 #define GL_SHADER 0x82E1
 #define GL_PROGRAM 0x82E2
@@ -136,6 +186,9 @@ namespace bgl {
     */
     u32 glslVersion();
 }
+
+
+#endif // GEODE_ANDROID
 
 /*
     Draws a fullscreen quad.

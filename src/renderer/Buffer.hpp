@@ -1,9 +1,10 @@
 #pragma once
 
-#include "Geode/cocos/platform/win32/CCGL.h"
 #include <common.hpp>
 
+#ifndef GL_SHADER_STORAGE_BUFFER
 #define GL_SHADER_STORAGE_BUFFER 0x90D2
+#endif
 
 /*
     A GPU buffer.

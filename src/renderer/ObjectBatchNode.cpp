@@ -1,5 +1,5 @@
 #include "ObjectBatchNode.hpp"
-#include "Geode/cocos/platform/win32/CCGL.h"
+#include <common.hpp>
 #include "Renderer.hpp"
 #include <profiler.hpp>
 

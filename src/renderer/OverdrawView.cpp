@@ -2,7 +2,7 @@
 #include "Geode/cocos/CCDirector.h"
 #include "Geode/cocos/base_nodes/CCNode.h"
 #include "Geode/cocos/platform/win32/CCEGLView.h"
-#include "Geode/cocos/platform/win32/CCGL.h"
+#include <common.hpp>
 #include "Geode/modify/Modify.hpp"
 #include "HotKey.hpp"
 #include "Renderer.hpp"

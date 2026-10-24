@@ -2,12 +2,18 @@
 
 #include "common.hpp"
 
+#ifdef GEODE_ANDROID
+// There is no keyboard on Android, the bodies of the hotkeys are dropped
+#define DECLARE_HOTKEY(K, F)
+#define DECLARE_HOTKEY_IF(K, COND, F)
+#else
 #define DECLARE_HOTKEY(K, F) static HotKey GEODE_CONCAT(__HOTKEY_, __LINE__)(K, []() F);
 
 // Same as DECLARE_HOTKEY, but the key is only used (and only consumed,
 // so the game still sees it) when COND is true when it is pressed.
 #define DECLARE_HOTKEY_IF(K, COND, F) \
     static HotKey GEODE_CONCAT(__HOTKEY_, __LINE__)(K, []() F, []() -> bool { return (COND); });
+#endif
 
 struct HotKey {
     cocos2d::enumKeyCodes key;
