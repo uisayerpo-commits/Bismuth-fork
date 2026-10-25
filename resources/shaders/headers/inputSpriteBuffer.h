@@ -18,9 +18,11 @@ struct InputSprite {
     uint indexCount;
 };
 
+#ifndef NO_STORAGE_BUFFERS
 STORAGE_BUFFER(INPUT_SPRITE_BUFFER_BINDING) InputSpriteBuffer {
     InputSprite u_inputSprites[CPP_ONLY(0)];
 };
+#endif
 
 /*
     This contains the bare minimum info you
@@ -33,6 +35,8 @@ struct PreCulledSprite {
     vec2 startPosition;
 };
 
+#ifndef NO_STORAGE_BUFFERS
 STORAGE_BUFFER(PRE_CULLED_SPRITE_BUFFER_BINDING) PreCulledSpriteBuffer {
     PreCulledSprite u_preCulledSprites[CPP_ONLY(0)];
 };
+#endif

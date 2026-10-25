@@ -15,6 +15,8 @@
 #define COLOR_CHANNEL_MG      1013
 #define COLOR_CHANNEL_MG2     1014
 
+#ifndef NO_STORAGE_BUFFERS
 STORAGE_BUFFER(COLOR_CHANNEL_BUFFER_BINDING) ColorChannelBuffer {
     RGBA u_channelColors[COLOR_CHANNEL_COUNT];
 };
+#endif

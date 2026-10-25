@@ -12,6 +12,8 @@ struct GroupCombinationState {
     uint _padding;
 };
 
+#ifndef NO_STORAGE_BUFFERS
 STORAGE_BUFFER(GROUP_STATE_BUFFER_BINDING) GroupStateBuffer {
     GroupCombinationState u_groupCombinationStates[CPP_ONLY(0)];
 };
+#endif

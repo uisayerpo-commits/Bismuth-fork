@@ -1,5 +1,9 @@
 #extension GL_ARB_shading_language_include:require
 
+// Mali GPUs have no storage blocks in the vertex stage, and they count the ones that are
+// declared even when they are never used. This header only gives the storage blocks to the compute shader.
+#define NO_STORAGE_BUFFERS
+
 #include "shared.h"
 
 //// VERTEX ATTRIBUTES ////

@@ -13,6 +13,8 @@ struct WorkGroup {
 
 #define MAX_WORK_GROUP_COUNT 10000
 
+#ifndef NO_STORAGE_BUFFERS
 STORAGE_BUFFER(WORK_GROUP_BUFFER_BINDING) WorkGroupBuffer {
     WorkGroup u_workGroups[CPP_ONLY(0)];
 };
+#endif

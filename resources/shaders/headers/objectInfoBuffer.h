@@ -33,6 +33,8 @@ struct ObjectInfo {
     This is the buffer that contains all the info of
     every object required in shader processing
 */
+#ifndef NO_STORAGE_BUFFERS
 STORAGE_BUFFER(OBJECT_INFO_BUFFER_BINDING) ObjectInfoBuffer {
     ObjectInfo u_objects[CPP_ONLY(0)];
 };
+#endif

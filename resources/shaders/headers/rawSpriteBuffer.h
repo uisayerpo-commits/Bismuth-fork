@@ -13,7 +13,9 @@ struct RawSprite {
 };
 
 #if !defined(GLSL) || !defined(RAW_SPRITES_IN_TEXTURE)
+#ifndef NO_STORAGE_BUFFERS
 STORAGE_BUFFER(RAW_SPRITE_BUFFER_BINDING) RawSpriteBuffer {
     RawSprite u_rawSprites[CPP_ONLY(0)];
 };
+#endif
 #endif
