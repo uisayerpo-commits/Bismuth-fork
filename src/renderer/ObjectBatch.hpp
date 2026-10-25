@@ -127,6 +127,10 @@ public:
     */
     DrawStats readDrawStats();
 
+    // The counters the culling shader fills on diagnostic frames (DIAGNOSTICS_COUNTER_COUNT of them)
+    void resetDiagnostics();
+    void readDiagnostics(u32* counters);
+
     /*
         Binds the texture with the raw sprites to the texture unit the vertex shader reads
         it from. The shader that is going to draw has to be in use. Does nothing when the
@@ -176,6 +180,7 @@ private:
     // GPU buffers
     Buffer* rawSpriteBuffer = nullptr; // not used when the raw sprites are in a texture
     Buffer* culledIndexBuffer = nullptr;
+    Buffer* diagnosticsBuffer = nullptr; // counters from the culling shader, see headers/shared.h
 
     // Android: the raw sprites, written by the culling compute shader, read by the vertex shader
     u32 rawSpriteTexture = 0;

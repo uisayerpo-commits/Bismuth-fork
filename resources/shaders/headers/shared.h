@@ -137,6 +137,8 @@ mat2 scaleMatrix(float scale) {
 #define DRAW_COMMAND_BUFFER_BINDING      9
 #define SPRITE_REMAP_BUFFER_BINDING      10
 #define PRE_CULLED_SPRITE_BUFFER_BINDING 11
+#define DIAGNOSTICS_BUFFER_BINDING       12
+#define DIAGNOSTICS_COUNTER_COUNT        8
 
 #include "colorChannelBuffer.h"
 #include "groupStateBuffer.h"

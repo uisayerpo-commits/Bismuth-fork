@@ -28,6 +28,44 @@ STORAGE_BUFFER(DRAW_COMMAND_BUFFER_BINDING) DrawCommandBuffer {
     DrawCommand u_drawCommands[];
 };
 
+//// DIAGNOSTICS ////
+// Counters the CPU reads back every few seconds (see Renderer::logDiagnostics):
+//  0: sprites on screen        1: alpha is 0 (not drawn)    2: NaN or infinity in the sprite data
+//  3: almost black (drawn)     4: bright (drawn)             5: sum of the alpha of drawn sprites * 1000
+//  6: drawn                    7: the object transform collapsed (determinant close to 0)
+layout (std430, binding = DIAGNOSTICS_BUFFER_BINDING) buffer DiagnosticsBuffer {
+    uint u_diagnostics[DIAGNOSTICS_COUNTER_COUNT];
+};
+
+void collectDiagnostics(vec4 color, vec2 position, mat2 transform) {
+    atomicAdd(u_diagnostics[0], 1u);
+
+    bool broken = any(isnan(color)) || any(isinf(color)) || any(isnan(position)) || any(isinf(position)) ||
+                  any(isnan(transform[0])) || any(isinf(transform[0])) || any(isnan(transform[1])) || any(isinf(transform[1]));
+    if (broken) {
+        atomicAdd(u_diagnostics[2], 1u);
+        return;
+    }
+
+    if (color.a <= 0.0) {
+        atomicAdd(u_diagnostics[1], 1u);
+        return;
+    }
+
+    atomicAdd(u_diagnostics[6], 1u);
+    atomicAdd(u_diagnostics[5], uint(clamp(color.a, 0.0, 1.0) * 1000.0));
+
+    // color.rgb is multiplied by the alpha at this point
+    float brightest = max(color.r, max(color.g, color.b)) / color.a;
+    if (brightest < 0.02)
+        atomicAdd(u_diagnostics[3], 1u);
+    else if (brightest > 0.5)
+        atomicAdd(u_diagnostics[4], 1u);
+
+    if (abs(determinant(transform)) < 0.000001)
+        atomicAdd(u_diagnostics[7], 1u);
+}
+
 //// RAW SPRITE OUTPUT ////
 #ifdef RAW_SPRITES_IN_TEXTURE
 layout (rgba32f, binding = 0) writeonly uniform highp image2D u_rawSpriteImage;
@@ -125,6 +163,9 @@ void processSprite(uint spriteIndex) {
 
     color.a *= state.opacity * object.opacity;
     color.rgb *= color.a;
+
+    if ((u_gameStateFlags & GAME_STATE_COLLECT_DIAGNOSTICS) != 0u)
+        collectDiagnostics(color, objectPosition, objectLocalTransform);
 
     if (color.a <= 0.0)
         return;

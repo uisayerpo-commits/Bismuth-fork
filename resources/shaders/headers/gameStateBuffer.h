@@ -1,4 +1,6 @@
 #define GAME_STATE_IS_PLAYER_DEAD (1u << 0)
+// Set on the frames where the culling shader counts what happens to the sprites (see DIAGNOSTICS_BUFFER_BINDING)
+#define GAME_STATE_COLLECT_DIAGNOSTICS (1u << 1)
 
 /*
     This is the uniform buffer used to store

@@ -28,7 +28,8 @@ ObjectBatch::~ObjectBatch() {
 void ObjectBatch::destroyBuffers() {
     Buffer** buffers[] = {
         &vertexBuffer, &indexBuffer, &inputSpriteBuffer,
-        &preCulledSpritesBuffer, &rawSpriteBuffer, &culledIndexBuffer
+        &preCulledSpritesBuffer, &rawSpriteBuffer, &culledIndexBuffer,
+        &diagnosticsBuffer
     };
 
     for (Buffer** buffer : buffers) {
@@ -94,6 +95,32 @@ static u32 createRawSpriteTexture(usize spriteCount) {
 }
 
 #endif
+
+void ObjectBatch::resetDiagnostics() {
+    if (!diagnosticsBuffer)
+        return;
+
+    u32 zeros[DIAGNOSTICS_COUNTER_COUNT] = {};
+    diagnosticsBuffer->write(zeros, sizeof(zeros));
+}
+
+void ObjectBatch::readDiagnostics(u32* counters) {
+    for (u32 i = 0; i < DIAGNOSTICS_COUNTER_COUNT; i++)
+        counters[i] = 0;
+
+    if (!diagnosticsBuffer)
+        return;
+
+    bgl::memoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT);
+
+    glBindBuffer(GL_COPY_READ_BUFFER, diagnosticsBuffer->getId());
+    const u32* data = (const u32*)glMapBufferRange(GL_COPY_READ_BUFFER, 0, DIAGNOSTICS_COUNTER_COUNT * sizeof(u32), GL_MAP_READ_BIT);
+    if (!data)
+        return;
+
+    memcpy(counters, data, DIAGNOSTICS_COUNTER_COUNT * sizeof(u32));
+    glUnmapBuffer(GL_COPY_READ_BUFFER);
+}
 
 ObjectBatch::DrawStats ObjectBatch::readDrawStats() {
     DrawStats stats;
@@ -352,6 +379,12 @@ bool ObjectBatch::finishWriting() {
 
     culledIndexBuffer = Buffer::createGPUExclusive("Culled index buffer", indexCount * sizeof(u32));
 
+    diagnosticsBuffer = Buffer::createDynamicCopy("Diagnostics buffer", DIAGNOSTICS_COUNTER_COUNT * sizeof(u32));
+    if (diagnosticsBuffer) {
+        u32 zeros[DIAGNOSTICS_COUNTER_COUNT] = {};
+        diagnosticsBuffer->write(zeros, sizeof(zeros));
+    }
+
     #ifdef GEODE_ANDROID
     // Vertex shaders can't read storage buffers on Mali GPUs, so the raw sprites go into a texture
     rawSpriteTexture = createRawSpriteTexture(inputSprites.size());
@@ -362,7 +395,7 @@ bool ObjectBatch::finishWriting() {
     #endif
 
     bool success = vertexBuffer && indexBuffer && inputSpriteBuffer &&
-                   preCulledSpritesBuffer && rawSpritesCreated && culledIndexBuffer;
+                   preCulledSpritesBuffer && rawSpritesCreated && culledIndexBuffer && diagnosticsBuffer;
 
     if (success) {
         spriteSorter.sortForCurrentBlendingStates();
@@ -473,6 +506,7 @@ void ObjectBatch::prepareCullingComputeShader() {
     #endif
     culledIndexBuffer->bindAsStorageBuffer(CULLED_INDEX_BUFFER_BINDING);
     preCulledSpritesBuffer->bindAsStorageBuffer(PRE_CULLED_SPRITE_BUFFER_BINDING);
+    diagnosticsBuffer->bindAsStorageBuffer(DIAGNOSTICS_BUFFER_BINDING);
 }
 
 struct AttribTypeInfo {

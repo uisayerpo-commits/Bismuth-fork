@@ -274,11 +274,6 @@ void Renderer::terminate() {
 }
 
 void Renderer::logDiagnostics() {
-    // About every 3 seconds at 60 fps
-    static u32 counter = 0;
-    if (counter++ % 180 != 0)
-        return;
-
     std::string glErrors;
     for (int i = 0; i < 8; i++) {
         GLenum error = glGetError();
@@ -308,6 +303,51 @@ void Renderer::logDiagnostics() {
 
     auto stats = objectBatch.readDrawStats();
 
+    u32 gpu[DIAGNOSTICS_COUNTER_COUNT];
+    objectBatch.readDiagnostics(gpu);
+
+    // Group states: NaN or infinity stays forever (the transforms are multiplied together), and
+    // a transform that collapsed to nothing makes its objects invisible
+    u32 brokenGroups = 0, collapsedGroups = 0, farGroups = 0;
+    for (const auto& state : groupManager.getGroupStates()) {
+        float values[] = {
+            state.offset.x, state.offset.y,
+            state.localTransform[0][0], state.localTransform[0][1], state.localTransform[1][0], state.localTransform[1][1],
+            state.positionalTransform[0][0], state.positionalTransform[0][1], state.positionalTransform[1][0], state.positionalTransform[1][1]
+        };
+
+        bool finite = true;
+        for (float value : values)
+            finite = finite && std::isfinite(value);
+
+        if (!finite) {
+            brokenGroups++;
+            continue;
+        }
+
+        if (std::abs(glm::determinant(state.localTransform)) < 0.000001f || std::abs(glm::determinant(state.positionalTransform)) < 0.000001f)
+            collapsedGroups++;
+        if (std::abs(state.offset.x) > 100000.f || std::abs(state.offset.y) > 100000.f)
+            farGroups++;
+    }
+
+    u32 darkChannels = 0, brightChannels = 0;
+    if (colorChannelBuffer) {
+        for (const auto& color : colorChannelBuffer->u_channelColors) {
+            if (color.a == 0)
+                continue;
+            u32 brightest = std::max(color.r, std::max(color.g, color.b));
+            if (brightest < 16)
+                darkChannels++;
+            else if (brightest > 128)
+                brightChannels++;
+        }
+    }
+
+    i32 framebuffer = 0, viewport[4] = { 0, 0, 0, 0 };
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &framebuffer);
+    glGetIntegerv(GL_VIEWPORT, viewport);
+
     log::info(
         "[diag] t={:.1f} dead={} | camera pos=({:.1f}, {:.1f}) size=({:.1f}, {:.1f}) right=({:.2f}, {:.2f}) up=({:.2f}, {:.2f}) | mvp: {:.5f} {:.5f} {:.3f} {:.3f}",
         gameState.u_timer, (gameState.u_gameStateFlags & GAME_STATE_IS_PLAYER_DEAD) != 0,
@@ -318,10 +358,17 @@ void Renderer::logDiagnostics() {
         gameState.u_mvp[0][0], gameState.u_mvp[1][1], gameState.u_mvp[3][0], gameState.u_mvp[3][1]
     );
     log::info(
-        "[diag] group combinations: {} hidden, {} visible, {} fading | color channels with alpha: {} | draw commands: {} ({} not empty), {} indices, largest {} | GL errors:{}",
-        hiddenGroups, visibleGroups, fadingGroups, visibleChannels,
+        "[diag] groups: {} hidden, {} visible, {} fading, {} with NaN/inf, {} collapsed, {} far away | channels with alpha: {} ({} dark, {} bright) | commands: {} ({} not empty), {} indices, largest {} | GL errors:{}",
+        hiddenGroups, visibleGroups, fadingGroups, brokenGroups, collapsedGroups, farGroups,
+        visibleChannels, darkChannels, brightChannels,
         stats.commands, stats.nonEmptyCommands, stats.indices, stats.largestCommand,
         glErrors.empty() ? " none" : glErrors
+    );
+    log::info(
+        "[diag] GPU sprites: {} on screen = {} drawn + {} alpha 0 + {} NaN/inf | of the drawn: {} almost black, {} bright, {} collapsed transform, average alpha {:.2f} | framebuffer {}, viewport {}x{}",
+        gpu[0], gpu[6], gpu[1], gpu[2], gpu[3], gpu[4], gpu[7],
+        gpu[6] > 0 ? (gpu[5] / 1000.0 / gpu[6]) : 0.0,
+        framebuffer, viewport[2], viewport[3]
     );
 }
 
@@ -366,6 +413,9 @@ void Renderer::prepareShaderUniforms() {
     gameState.u_gameStateFlags = 0;
     if (layer->m_player1->m_isDead)
         gameState.u_gameStateFlags |= GAME_STATE_IS_PLAYER_DEAD;
+
+    if (collectDiagnostics)
+        gameState.u_gameStateFlags |= GAME_STATE_COLLECT_DIAGNOSTICS;
 
     if (layer->m_skipAudioStep)
         gameState.u_audioScale = FMODAudioEngine::sharedEngine()->getMeteringValue();
@@ -513,6 +563,13 @@ void Renderer::draw() {
 
     fetchBlendingStates();
 
+    #ifdef GEODE_ANDROID
+    // Every 2 seconds of level time the culling shader counts what happens to the sprites
+    i64 bucket = (i64)(gameTimer / 2.0);
+    collectDiagnostics = bucket != diagnosticsBucket;
+    diagnosticsBucket = bucket;
+    #endif
+
     u64 prevTime = getTime();
     storeGLStates();
     prepareShaderUniforms();
@@ -533,10 +590,16 @@ void Renderer::draw() {
         // drawLine(tr, tl, glm::vec4(1, 1, 0, 1));
         // drawLine(tl, bl, glm::vec4(1, 1, 0, 1));
 
+        #ifdef GEODE_ANDROID
+        if (collectDiagnostics)
+            objectBatch.resetDiagnostics();
+        #endif
+
         objectBatch.predraw();
 
         #ifdef GEODE_ANDROID
-        logDiagnostics();
+        if (collectDiagnostics)
+            logDiagnostics();
         #endif
     }
 

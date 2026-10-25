@@ -35,6 +35,10 @@ private:
     // Logs what the GPU is working with every few seconds (Android port debugging)
     void logDiagnostics();
 
+    // True on the frames the culling shader counts sprites and the log gets written
+    bool collectDiagnostics = false;
+    i64 diagnosticsBucket = -1;
+
     void prepareColorChannelBuffer();
 
     bool generateStaticRenderingBuffer(std::vector<GameObject*>& objects);
