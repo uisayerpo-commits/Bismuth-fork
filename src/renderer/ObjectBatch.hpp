@@ -114,6 +114,19 @@ public:
     */
     bool finishWriting();
 
+    struct DrawStats {
+        u32 commands = 0;      // draw commands (one per work group)
+        u32 nonEmptyCommands = 0;
+        u64 indices = 0;       // indices the commands draw in total
+        u32 largestCommand = 0;
+    };
+
+    /*
+        Reads back the draw commands the culling compute shader wrote. This waits for the
+        GPU to finish, so it is only for diagnostics, not something to do every frame.
+    */
+    DrawStats readDrawStats();
+
     /*
         Binds the texture with the raw sprites to the texture unit the vertex shader reads
         it from. The shader that is going to draw has to be in use. Does nothing when the

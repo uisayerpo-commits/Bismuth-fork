@@ -273,6 +273,58 @@ void Renderer::terminate() {
     log::info("Renderer terminated");
 }
 
+void Renderer::logDiagnostics() {
+    // About every 3 seconds at 60 fps
+    static u32 counter = 0;
+    if (counter++ % 180 != 0)
+        return;
+
+    std::string glErrors;
+    for (int i = 0; i < 8; i++) {
+        GLenum error = glGetError();
+        if (error == GL_NO_ERROR)
+            break;
+        glErrors += fmt::format(" 0x{:x}", (u32)error);
+    }
+
+    // How many group combinations are hidden, fully visible or fading
+    u32 hiddenGroups = 0, visibleGroups = 0, fadingGroups = 0;
+    for (const auto& state : groupManager.getGroupStates()) {
+        if (state.opacity < 0.01f)
+            hiddenGroups++;
+        else if (state.opacity > 0.99f)
+            visibleGroups++;
+        else
+            fadingGroups++;
+    }
+
+    u32 visibleChannels = 0;
+    if (colorChannelBuffer) {
+        for (const auto& color : colorChannelBuffer->u_channelColors) {
+            if (color.a > 0)
+                visibleChannels++;
+        }
+    }
+
+    auto stats = objectBatch.readDrawStats();
+
+    log::info(
+        "[diag] t={:.1f} dead={} | camera pos=({:.1f}, {:.1f}) size=({:.1f}, {:.1f}) right=({:.2f}, {:.2f}) up=({:.2f}, {:.2f}) | mvp: {:.5f} {:.5f} {:.3f} {:.3f}",
+        gameState.u_timer, (gameState.u_gameStateFlags & GAME_STATE_IS_PLAYER_DEAD) != 0,
+        gameState.u_cameraPosition.x, gameState.u_cameraPosition.y,
+        gameState.u_cameraSize.x, gameState.u_cameraSize.y,
+        gameState.u_cameraRight.x, gameState.u_cameraRight.y,
+        gameState.u_cameraUp.x, gameState.u_cameraUp.y,
+        gameState.u_mvp[0][0], gameState.u_mvp[1][1], gameState.u_mvp[3][0], gameState.u_mvp[3][1]
+    );
+    log::info(
+        "[diag] group combinations: {} hidden, {} visible, {} fading | color channels with alpha: {} | draw commands: {} ({} not empty), {} indices, largest {} | GL errors:{}",
+        hiddenGroups, visibleGroups, fadingGroups, visibleChannels,
+        stats.commands, stats.nonEmptyCommands, stats.indices, stats.largestCommand,
+        glErrors.empty() ? " none" : glErrors
+    );
+}
+
 void Renderer::prepareShaderUniforms() {
     kmMat4 matrixP;
 	kmMat4 matrixMV;
@@ -482,6 +534,10 @@ void Renderer::draw() {
         // drawLine(tl, bl, glm::vec4(1, 1, 0, 1));
 
         objectBatch.predraw();
+
+        #ifdef GEODE_ANDROID
+        logDiagnostics();
+        #endif
     }
 
     renderingTimer.start();
@@ -739,10 +795,15 @@ void storeGLStates() {
     // glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &storedIBO);
     glGetIntegerv(GL_CURRENT_PROGRAM, &storedProgram);
     
-    // glGetIntegerv(GL_BLEND_SRC_ALPHA, &storedBlendSrcAlpha);
-    // glGetIntegerv(GL_BLEND_SRC_RGB,   &storedBlendSrcRGB);
-    // glGetIntegerv(GL_BLEND_DST_ALPHA, &storedBlendDstAlpha);
-    // glGetIntegerv(GL_BLEND_DST_RGB,   &storedBlendDstRGB);
+    #ifdef GEODE_ANDROID
+    // The batch nodes change the blend function. The engine remembers the last one it set and
+    // skips setting it again when it is the same, so whatever is left behind would stay and the
+    // nodes drawn after the objects (player, interface) would be blended wrong.
+    glGetIntegerv(GL_BLEND_SRC_ALPHA, &storedBlendSrcAlpha);
+    glGetIntegerv(GL_BLEND_SRC_RGB,   &storedBlendSrcRGB);
+    glGetIntegerv(GL_BLEND_DST_ALPHA, &storedBlendDstAlpha);
+    glGetIntegerv(GL_BLEND_DST_RGB,   &storedBlendDstRGB);
+    #endif
 
     /*
     for (int i = 0; i < 9; i++) {
@@ -761,14 +822,14 @@ void restoreGLStates() {
     // glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, storedIBO);
     glUseProgram(storedProgram);
 
-    /*
+    #ifdef GEODE_ANDROID
     glBlendFuncSeparate(
         storedBlendSrcRGB,
         storedBlendDstRGB,
         storedBlendSrcAlpha,
         storedBlendDstAlpha
     );
-    */
+    #endif
 
     /*
     for (int i = 0; i < 9; i++) {

@@ -95,6 +95,37 @@ static u32 createRawSpriteTexture(usize spriteCount) {
 
 #endif
 
+ObjectBatch::DrawStats ObjectBatch::readDrawStats() {
+    DrawStats stats;
+    if (!sortedBatch || !sortedBatch->drawCommandBuffer)
+        return stats;
+
+    Buffer* buffer = sortedBatch->drawCommandBuffer;
+    usize size = buffer->getSize();
+    if (size == 0)
+        return stats;
+
+    // The compute shader wrote this buffer, make it visible to buffer reads from the CPU
+    bgl::memoryBarrier(GL_BUFFER_UPDATE_BARRIER_BIT);
+
+    glBindBuffer(GL_COPY_READ_BUFFER, buffer->getId());
+    const u32* data = (const u32*)glMapBufferRange(GL_COPY_READ_BUFFER, 0, size, GL_MAP_READ_BIT);
+    if (!data)
+        return stats;
+
+    stats.commands = (u32)(size / (5 * sizeof(u32)));
+    for (u32 i = 0; i < stats.commands; i++) {
+        u32 count = data[i * 5]; // index count of the command
+        if (count > 0)
+            stats.nonEmptyCommands++;
+        stats.indices += count;
+        stats.largestCommand = std::max(stats.largestCommand, count);
+    }
+
+    glUnmapBuffer(GL_COPY_READ_BUFFER);
+    return stats;
+}
+
 void ObjectBatch::bindRawSpriteTexture(Shader* shader) {
     #ifdef GEODE_ANDROID
     if (!rawSpriteTexture)

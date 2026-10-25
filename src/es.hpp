@@ -338,6 +338,12 @@ inline void (*GetBufferSubData)(unsigned, std::ptrdiff_t, std::ptrdiff_t, void*)
 #ifndef GL_RED
 #define GL_RED 0x1903
 #endif
+#ifndef GL_MAP_READ_BIT
+#define GL_MAP_READ_BIT 0x0001
+#endif
+#ifndef GL_BUFFER_UPDATE_BARRIER_BIT
+#define GL_BUFFER_UPDATE_BARRIER_BIT 0x00000200
+#endif
 #ifndef GL_RGBA32F
 #define GL_RGBA32F 0x8814
 #endif

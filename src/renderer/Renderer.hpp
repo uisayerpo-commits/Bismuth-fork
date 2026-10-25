@@ -32,6 +32,9 @@ private:
 
     void prepareShaderUniforms();
 
+    // Logs what the GPU is working with every few seconds (Android port debugging)
+    void logDiagnostics();
+
     void prepareColorChannelBuffer();
 
     bool generateStaticRenderingBuffer(std::vector<GameObject*>& objects);
