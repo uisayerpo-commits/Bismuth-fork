@@ -2,6 +2,8 @@
 #include "Geode/cocos/CCDirector.h"
 #include "Geode/cocos/kazmath/include/kazmath/mat4.h"
 #include <common.hpp>
+#include <algorithm>
+#include <vector>
 #include "Geode/cocos/robtop/keyboard_dispatcher/CCKeyboardDelegate.h"
 #include "Geode/cocos/sprite_nodes/CCSpriteBatchNode.h"
 #include "GroupManager.hpp"
@@ -364,6 +366,29 @@ void Renderer::logDiagnostics() {
         stats.commands, stats.nonEmptyCommands, stats.indices, stats.largestCommand,
         glErrors.empty() ? " none" : glErrors
     );
+    // The most used color channels, with the color the CPU uploaded for them
+    auto topChannels = [&](u32 base) {
+        std::vector<std::pair<u32, u32>> used; // count, channel
+        for (u32 channel = 0; channel < COLOR_CHANNEL_COUNT; channel++) {
+            if (gpu[base + channel] > 0)
+                used.push_back({ gpu[base + channel], channel });
+        }
+        std::sort(used.begin(), used.end(), [](auto& a, auto& b) { return a.first > b.first; });
+
+        std::string text;
+        for (usize i = 0; i < used.size() && i < 6; i++) {
+            auto& color = colorChannelBuffer->u_channelColors[used[i].second];
+            text += fmt::format(" [ch {} x{} rgba {},{},{},{}]", used[i].second, used[i].first, (u32)color.r, (u32)color.g, (u32)color.b, (u32)color.a);
+        }
+        return text.empty() ? std::string(" none") : text;
+    };
+
+    log::info(
+        "[diag] alpha 0 because of (can overlap): channel alpha {}, group opacity {}, object opacity {} | only the channel alpha: {}, only the group: {}, only the object: {}",
+        gpu[8], gpu[9], gpu[10], gpu[11], gpu[12], gpu[13]
+    );
+    log::info("[diag] channels of drawn sprites:{}", topChannels(DIAGNOSTICS_DRAWN_CHANNEL_BASE));
+    log::info("[diag] channels of sprites with alpha 0:{}", topChannels(DIAGNOSTICS_HIDDEN_CHANNEL_BASE));
     log::info(
         "[diag] GPU sprites: {} on screen = {} drawn + {} alpha 0 + {} NaN/inf | of the drawn: {} almost black, {} bright, {} collapsed transform, average alpha {:.2f} | framebuffer {}, viewport {}x{}",
         gpu[0], gpu[6], gpu[1], gpu[2], gpu[3], gpu[4], gpu[7],

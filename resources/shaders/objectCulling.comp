@@ -33,6 +33,8 @@ STORAGE_BUFFER(DRAW_COMMAND_BUFFER_BINDING) DrawCommandBuffer {
 //  0: sprites on screen        1: alpha is 0 (not drawn)    2: NaN or infinity in the sprite data
 //  3: almost black (drawn)     4: bright (drawn)             5: sum of the alpha of drawn sprites * 1000
 //  6: drawn                    7: the object transform collapsed (determinant close to 0)
+//  8: color channel alpha is 0 9: group opacity is 0       10: object opacity is 0   (can overlap)
+// 11: only the channel alpha  12: only the group opacity   13: only the object opacity
 layout (std430, binding = DIAGNOSTICS_BUFFER_BINDING) buffer DiagnosticsBuffer {
     uint u_diagnostics[DIAGNOSTICS_COUNTER_COUNT];
 };
@@ -64,6 +66,25 @@ void collectDiagnostics(vec4 color, vec2 position, mat2 transform) {
 
     if (abs(determinant(transform)) < 0.000001)
         atomicAdd(u_diagnostics[7], 1u);
+}
+
+// Why a sprite ends up with alpha 0, and which color channels the sprites use
+void collectAlphaDiagnostics(uint colorChannel, float channelAlpha, float groupOpacity, float objectOpacity) {
+    bool channelZero = channelAlpha <= 0.0;
+    bool groupZero   = groupOpacity <= 0.0;
+    bool objectZero  = objectOpacity <= 0.0;
+
+    if (channelZero) atomicAdd(u_diagnostics[8], 1u);
+    if (groupZero)   atomicAdd(u_diagnostics[9], 1u);
+    if (objectZero)  atomicAdd(u_diagnostics[10], 1u);
+
+    if (channelZero && !groupZero && !objectZero) atomicAdd(u_diagnostics[11], 1u);
+    if (groupZero && !channelZero && !objectZero) atomicAdd(u_diagnostics[12], 1u);
+    if (objectZero && !channelZero && !groupZero) atomicAdd(u_diagnostics[13], 1u);
+
+    bool hidden = channelZero || groupZero || objectZero;
+    uint base = hidden ? uint(DIAGNOSTICS_HIDDEN_CHANNEL_BASE) : uint(DIAGNOSTICS_DRAWN_CHANNEL_BASE);
+    atomicAdd(u_diagnostics[base + colorChannel], 1u);
 }
 
 //// RAW SPRITE OUTPUT ////
@@ -160,6 +181,9 @@ void processSprite(uint spriteIndex) {
     } else if (spriteType == SPRITE_TYPE_DETAIL && (objectFlags & OBJECT_FLAG_HAS_DETAIL_HSV) != 0u) {
         color = applyHSV(object.detailHSV, color);
     }
+
+    if ((u_gameStateFlags & GAME_STATE_COLLECT_DIAGNOSTICS) != 0u)
+        collectAlphaDiagnostics(colorChannel, color.a, state.opacity, object.opacity);
 
     color.a *= state.opacity * object.opacity;
     color.rgb *= color.a;

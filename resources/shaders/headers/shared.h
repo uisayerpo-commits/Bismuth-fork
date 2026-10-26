@@ -138,7 +138,12 @@ mat2 scaleMatrix(float scale) {
 #define SPRITE_REMAP_BUFFER_BINDING      10
 #define PRE_CULLED_SPRITE_BUFFER_BINDING 11
 #define DIAGNOSTICS_BUFFER_BINDING       12
-#define DIAGNOSTICS_COUNTER_COUNT        8
+// 16 counters, then one counter per color channel for the sprites that were drawn,
+// then one per color channel for the sprites that ended up with alpha 0 (1101 color channels)
+#define DIAGNOSTICS_SCALAR_COUNT         16
+#define DIAGNOSTICS_DRAWN_CHANNEL_BASE   16
+#define DIAGNOSTICS_HIDDEN_CHANNEL_BASE  1117
+#define DIAGNOSTICS_COUNTER_COUNT        2218
 
 #include "colorChannelBuffer.h"
 #include "groupStateBuffer.h"
