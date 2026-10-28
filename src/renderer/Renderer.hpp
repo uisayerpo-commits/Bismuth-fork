@@ -119,6 +119,14 @@ public:
         return cullingComputeShader;
     }
 
+    inline Shader* getCullingScanShader() const {
+        return cullingScanShader;
+    }
+
+    inline Shader* getCullingCopyShader() const {
+        return cullingCopyShader;
+    }
+
     bool useOptimizations();
 
     void setEnabled(bool enabled);
@@ -182,6 +190,8 @@ private:
     Shader* shader = nullptr;
     Shader* basicShader = nullptr;
     Shader* cullingComputeShader = nullptr;
+    Shader* cullingScanShader = nullptr;
+    Shader* cullingCopyShader = nullptr;
 
     // CPU side copy of the color channel buffer, uploaded every frame
     UPtr<ColorChannelBuffer> colorChannelBuffer;

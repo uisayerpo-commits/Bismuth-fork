@@ -8,15 +8,28 @@
 class Renderer;
 
 struct WorkGroupRange {
-    u32 offset, count;
+    u32 offset = 0, count = 0;
+    // Which of the layers this is (the index into the layer info buffer). The draw commands
+    // of the layer are command number slot * 2 (normal) and slot * 2 + 1 (additive).
+    u32 slot = 0;
 };
 
+/*
+    Layers are keyed by z layer and sprite sheet, the blending flag of the key is always false.
+    Which sprites are drawn normally and which additively is decided by the culling shader every frame.
+*/
 struct SortedObjectBatch {
     Buffer* spriteRemapBuffer = nullptr;
     Buffer* workGroupBuffer   = nullptr;
-    Buffer* drawCommandBuffer = nullptr;
+    Buffer* drawCommandBuffer = nullptr; // 2 commands per layer, see WorkGroupRange::slot
+
+    // Used by the 3 culling passes, see headers/workGroupBuffer.h
+    Buffer* layerInfoBuffer       = nullptr;
+    Buffer* workGroupOutputBuffer = nullptr;
+    Buffer* spriteStateBuffer     = nullptr;
 
     u32 workGroupCount = 0;
+    u32 layerCount = 0;
 
     std::map<LayerKey, WorkGroupRange> workGroupRangePerLayerKey;
 

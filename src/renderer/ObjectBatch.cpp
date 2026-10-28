@@ -319,7 +319,8 @@ void ObjectBatch::addSprite(
         .objectIndex = (u32)currentSpriteSRBIndex,
         .spriteType = (u32)type,
         .indexStart = (u32)indexStart,
-        .indexCount = (u32)indexCount
+        .indexCount = (u32)indexCount,
+        .blendingChannel = (u32)ObjectUtils::getSpriteColorChannel(type, object, sprite)
     });
 
     if (object != groupIndexObject) {
@@ -430,25 +431,31 @@ void ObjectBatch::draw(const LayerKey& layer) {
         return;
     }
 
-    auto rangeIt = sortedBatch->workGroupRangePerLayerKey.find(layer);
-    if (rangeIt == sortedBatch->workGroupRangePerLayerKey.end() || rangeIt->second.count == 0) {
+    // Layers are stored without the blending flag, a layer has 2 draw commands: normal, then additive
+    LayerKey key = layer;
+    key.blending = false;
+
+    auto rangeIt = sortedBatch->workGroupRangePerLayerKey.find(key);
+    if (rangeIt == sortedBatch->workGroupRangePerLayerKey.end()) {
         PROFILER_POP();
         return;
     }
-    const auto& range = rangeIt->second;
 
-    sortedBatch->bindBuffers();
-    prepareCullingComputeShader();
+    u32 command = rangeIt->second.slot * 2 + (layer.blending ? 1 : 0);
+
+    // The vertex shader only needs the game state uniform buffer, everything else it reads from the
+    // raw sprite texture. The storage buffers were bound by predraw.
     renderer.bindCullingComputeShaderBuffers();
     sortedBatch->drawCommandBuffer->bindAs(GL_DRAW_INDIRECT_BUFFER);
     glBindVertexArray(vao);
     culledIndexBuffer->bindAs(GL_ELEMENT_ARRAY_BUFFER);
 
+    // One draw call for the whole layer, the culling passes put its indices together in order
     bgl::multiDrawElementsIndirect(
         GL_TRIANGLES,
         GL_UNSIGNED_INT,
-        (const void*)(uintptr_t)(range.offset * sizeof(int) * 5),
-        range.count,
+        (const void*)(uintptr_t)(command * sizeof(int) * 5),
+        1,
         sizeof(int) * 5
     );
 
@@ -458,30 +465,43 @@ void ObjectBatch::draw(const LayerKey& layer) {
 void ObjectBatch::predraw() {
     PROFILER_PUSH("ObjectBatch::predraw");
 
-    Shader* computeShader = renderer.getCullingComputeShader();
+    Shader* cullShader = renderer.getCullingComputeShader();
+    Shader* scanShader = renderer.getCullingScanShader();
+    Shader* copyShader = renderer.getCullingCopyShader();
 
-    if (!sortedBatch || !computeShader || sortedBatch->workGroupCount == 0) {
+    if (!sortedBatch || !cullShader || !scanShader || !copyShader || sortedBatch->workGroupCount == 0) {
         PROFILER_POP();
         return;
     }
 
     cullingComputeShaderTimer.start();
 
-    computeShader->use();
-
     prepareCullingComputeShader();
     renderer.bindCullingComputeShaderBuffers();
     sortedBatch->bindBuffers();
 
-    // Every invocation processes one work group, the dispatch is rounded up
-    u32 threadGroupCount = (sortedBatch->workGroupCount + CULLING_LOCAL_SIZE - 1) / CULLING_LOCAL_SIZE;
-    bgl::dispatchCompute(threadGroupCount, 1, 1);
+    u32 workGroupThreadGroups = (sortedBatch->workGroupCount + CULLING_LOCAL_SIZE - 1) / CULLING_LOCAL_SIZE;
+    u32 layerThreadGroups     = (sortedBatch->layerCount + CULLING_LOCAL_SIZE - 1) / CULLING_LOCAL_SIZE;
+
+    // Pass 1: every invocation culls the sprites of a work group and counts the indices it keeps
+    cullShader->use();
+    bgl::dispatchCompute(workGroupThreadGroups, 1, 1);
+    bgl::memoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
+    // Pass 2: every invocation handles a layer, gives its work groups their place in the index
+    // buffer and writes the draw commands
+    scanShader->use();
+    bgl::dispatchCompute(layerThreadGroups, 1, 1);
+    bgl::memoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
+    // Pass 3: every invocation copies the indices of the kept sprites of a work group
+    copyShader->use();
+    bgl::dispatchCompute(workGroupThreadGroups, 1, 1);
 
     /*
-        The compute shader writes the culled indices, the draw commands and
-        the raw sprites. The draw calls read them as an index buffer, as
-        indirect commands and as a shader storage buffer. Without this,
-        what the draw calls see is undefined (flickering, missing objects
+        The passes write the culled indices, the draw commands and the raw sprites. The draw
+        calls read them as an index buffer, as indirect commands and (as a texture) in the vertex
+        shader. Without this, what the draw calls see is undefined (flickering, missing objects
         or even GPU hangs, depending on the driver).
     */
     GLbitfield barriers = GL_SHADER_STORAGE_BARRIER_BIT | GL_ELEMENT_ARRAY_BARRIER_BIT | GL_COMMAND_BARRIER_BIT;

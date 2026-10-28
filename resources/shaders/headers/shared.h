@@ -138,6 +138,9 @@ mat2 scaleMatrix(float scale) {
 #define SPRITE_REMAP_BUFFER_BINDING      10
 #define PRE_CULLED_SPRITE_BUFFER_BINDING 11
 #define DIAGNOSTICS_BUFFER_BINDING       12
+#define SPRITE_STATE_BUFFER_BINDING      13
+#define WORK_GROUP_OUTPUT_BUFFER_BINDING 14
+#define LAYER_INFO_BUFFER_BINDING        15
 // 16 counters, then one counter per color channel for the sprites that were drawn,
 // then one per color channel for the sprites that ended up with alpha 0 (1101 color channels)
 #define DIAGNOSTICS_SCALAR_COUNT         16

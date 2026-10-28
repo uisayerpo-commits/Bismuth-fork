@@ -15,8 +15,12 @@
 #define COLOR_CHANNEL_MG      1013
 #define COLOR_CHANNEL_MG2     1014
 
+// One bit per color channel, 1 if the channel is blending (additive) right now
+#define COLOR_CHANNEL_BLENDING_WORDS 35
+
 #ifndef NO_STORAGE_BUFFERS
 STORAGE_BUFFER(COLOR_CHANNEL_BUFFER_BINDING) ColorChannelBuffer {
     RGBA u_channelColors[COLOR_CHANNEL_COUNT];
+    uint u_channelBlending[COLOR_CHANNEL_BLENDING_WORDS];
 };
 #endif

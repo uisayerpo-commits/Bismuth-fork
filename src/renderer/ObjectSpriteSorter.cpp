@@ -8,12 +8,21 @@ SortedObjectBatch::~SortedObjectBatch() {
         Buffer::destroy(workGroupBuffer);
     if (drawCommandBuffer)
         Buffer::destroy(drawCommandBuffer);
+    if (layerInfoBuffer)
+        Buffer::destroy(layerInfoBuffer);
+    if (workGroupOutputBuffer)
+        Buffer::destroy(workGroupOutputBuffer);
+    if (spriteStateBuffer)
+        Buffer::destroy(spriteStateBuffer);
 }
 
 void SortedObjectBatch::bindBuffers() {
     spriteRemapBuffer->bindAsStorageBuffer(SPRITE_REMAP_BUFFER_BINDING);
     workGroupBuffer->bindAsStorageBuffer(WORK_GROUP_BUFFER_BINDING);
     drawCommandBuffer->bindAsStorageBuffer(DRAW_COMMAND_BUFFER_BINDING);
+    layerInfoBuffer->bindAsStorageBuffer(LAYER_INFO_BUFFER_BINDING);
+    workGroupOutputBuffer->bindAsStorageBuffer(WORK_GROUP_OUTPUT_BUFFER_BINDING);
+    spriteStateBuffer->bindAsStorageBuffer(SPRITE_STATE_BUFFER_BINDING);
 }
 
 void ObjectSpriteSorter::addSprite(
@@ -62,17 +71,28 @@ UPtr<SortedObjectBatch> ObjectSpriteSorter::generateSortedBatch() {
 
     u32 outIndex = 0;
     std::map<LayerKey, WorkGroupRange> workGroupRangesPerLayerKey;
+    std::vector<LayerInfo> layerInfos;
 
     for (auto& [key, layer] : sortedSpriteLayers) {
         // log::info("Process layer: {}", key.toString());
         u32 workGroupStartIndex = workGroups.size();
+        u32 layerIndexBase = outIndex;
         generateWorkGroupsForLayer(key, approxSpritesPerWorkGroup, outIndex, spriteRemap, workGroups);
         u32 workGroupEndIndex = workGroups.size();
 
         workGroupRangesPerLayerKey[key] = {
             .offset = workGroupStartIndex,
-            .count  = workGroupEndIndex - workGroupStartIndex
+            .count  = workGroupEndIndex - workGroupStartIndex,
+            .slot   = (u32)layerInfos.size()
         };
+
+        // The layer owns the part of the culled index buffer that fits all of its indices
+        layerInfos.push_back({
+            .firstWorkGroup = workGroupStartIndex,
+            .workGroupCount = workGroupEndIndex - workGroupStartIndex,
+            .indexBase  = layerIndexBase,
+            .indexTotal = outIndex - layerIndexBase
+        });
 
         // log::info("Layer processed {}: (index={}, size={})", key.toString(), workGroupStartIndex, workGroupEndIndex - workGroupStartIndex);
     }
@@ -100,8 +120,9 @@ UPtr<SortedObjectBatch> ObjectSpriteSorter::generateSortedBatch() {
         return nullptr;
     }
 
+    // 2 commands for each layer: the sprites drawn normally, then the sprites drawn additively
     std::vector<DrawCommand> drawCommands;
-    drawCommands.resize(workGroups.size());
+    drawCommands.resize(layerInfos.size() * 2);
 
     for (auto& cmd : drawCommands) {
         cmd.baseInstance = 0;
@@ -109,26 +130,40 @@ UPtr<SortedObjectBatch> ObjectSpriteSorter::generateSortedBatch() {
         cmd.instanceCount = 1;
     }
 
-    Buffer* drawCommandBuffer = Buffer::createGPUExclusive(
+    auto batch = std::make_unique<SortedObjectBatch>();
+    batch->spriteRemapBuffer = spriteRemapBuffer;
+    batch->workGroupBuffer   = workGroupBuffer;
+    batch->workGroupCount    = workGroups.size();
+    batch->layerCount        = layerInfos.size();
+    batch->workGroupRangePerLayerKey = workGroupRangesPerLayerKey;
+
+    // From here on the batch owns the buffers, it destroys what was created if it is dropped early
+    batch->drawCommandBuffer = Buffer::createGPUExclusive(
         "Draw command buffer",
-        workGroups.size() * sizeof(DrawCommand)
+        drawCommands.size() * sizeof(DrawCommand)
+    );
+    batch->layerInfoBuffer = Buffer::createStaticDraw(
+        "Layer info buffer",
+        layerInfos.data(),
+        layerInfos.size() * sizeof(LayerInfo)
+    );
+    batch->workGroupOutputBuffer = Buffer::createGPUExclusive(
+        "Work group output buffer",
+        workGroups.size() * sizeof(WorkGroupOutput)
+    );
+    batch->spriteStateBuffer = Buffer::createGPUExclusive(
+        "Sprite state buffer",
+        spriteEntries.size() * sizeof(u32)
     );
 
-    if (!drawCommandBuffer) {
-        Buffer::destroy(spriteRemapBuffer);
-        Buffer::destroy(workGroupBuffer);
+    if (!batch->drawCommandBuffer || !batch->layerInfoBuffer || !batch->workGroupOutputBuffer || !batch->spriteStateBuffer)
         return nullptr;
-    }
 
-    drawCommandBuffer->write(drawCommands.data(), drawCommandBuffer->getSize());
+    batch->drawCommandBuffer->write(drawCommands.data(), batch->drawCommandBuffer->getSize());
 
-    return std::make_unique<SortedObjectBatch>(
-        spriteRemapBuffer,
-        workGroupBuffer,
-        drawCommandBuffer,
-        workGroups.size(),
-        workGroupRangesPerLayerKey
-    );
+    log::info("Layer count: {}", layerInfos.size());
+
+    return batch;
 }
 
 void ObjectSpriteSorter::generateWorkGroupsForLayer(
@@ -170,6 +205,6 @@ void ObjectSpriteSorter::generateWorkGroupsForLayer(
 }
 
 LayerKey ObjectSpriteSorter::SpriteEntry::getFullLayerKey() const {
-    auto renderer = Renderer::get();
-    return { zLayer, spriteSheet, renderer && renderer->isColorChannelBlending(colorChannelId) };
+    // The blending state is not part of the layer, the culling shader picks the draw pass every frame
+    return { zLayer, spriteSheet, false };
 }

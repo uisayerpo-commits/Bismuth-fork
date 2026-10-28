@@ -16,6 +16,8 @@ struct InputSprite {
     uint indexStart;
     // Number of indicies belonging to this sprite
     uint indexCount;
+    // The color channel whose blending state decides if the sprite is drawn normally or additively
+    uint blendingChannel;
 };
 
 #ifndef NO_STORAGE_BUFFERS

@@ -147,9 +147,18 @@ bool Renderer::init(PlayLayer* layer, CCArray* levelObjects) {
     if (!shader)
         return false;
 
-    cullingComputeShader = Shader::createCompute("objectCulling.comp", shaderMacroVariables);
-    if (!cullingComputeShader) {
-        log::error("the object culling compute shader failed to compile, falling back to the vanilla renderer");
+    // The culling is done in 3 passes (see headers/workGroupBuffer.h), one program for each
+    auto cullingPassMacros = [&](const char* pass) {
+        auto macros = shaderMacroVariables;
+        macros["CULLING_PASS"] = pass;
+        return macros;
+    };
+
+    cullingComputeShader = Shader::createCompute("objectCulling.comp", cullingPassMacros("1"));
+    cullingScanShader    = Shader::createCompute("objectCulling.comp", cullingPassMacros("2"));
+    cullingCopyShader    = Shader::createCompute("objectCulling.comp", cullingPassMacros("3"));
+    if (!cullingComputeShader || !cullingScanShader || !cullingCopyShader) {
+        log::error("the object culling compute shaders failed to compile, falling back to the vanilla renderer");
         return false;
     }
 
@@ -237,6 +246,13 @@ void Renderer::generateBatchNodes() {
         auto batchNode = ObjectBatchNode::create(id);
         if (batchNode) {
             auto node = getSpriteBatchNodeWithLayerId(id);
+            if (!node) {
+                // Sprites can switch between the normal and the additive pass while the level plays,
+                // so the layer needs a node even when the game made none for this blending state
+                auto other = id;
+                other.blending = !id.blending;
+                node = getSpriteBatchNodeWithLayerId(other);
+            }
 
             if (!node)
                 continue;
@@ -253,7 +269,7 @@ void Renderer::terminate() {
         timeElapsedQuery = 0;
     }
 
-    Shader** shaders[] = { &shader, &basicShader, &cullingComputeShader };
+    Shader** shaders[] = { &shader, &basicShader, &cullingComputeShader, &cullingScanShader, &cullingCopyShader };
     for (Shader** s : shaders) {
         if (*s)
             Shader::destroy(*s);
@@ -476,6 +492,15 @@ void Renderer::prepareColorChannelBuffer() {
     }
 
     colorChannelBuffer->u_channelColors[COLOR_CHANNEL_BLACK] = { 0, 0, 0, 255 };
+
+    // Which channels blend (additively) right now. The culling shader picks the draw pass of
+    // every sprite from this, so it follows the color triggers while the level plays.
+    memset(colorChannelBuffer->u_channelBlending, 0, sizeof(colorChannelBuffer->u_channelBlending));
+    for (usize i = 0; i < colorChannelsIsBlending.size() && i < COLOR_CHANNEL_COUNT; i++) {
+        if (colorChannelsIsBlending[i])
+            colorChannelBuffer->u_channelBlending[i >> 5] |= 1u << (i & 31);
+    }
+
     colorChannelBufferObject->write(colorChannelBuffer.get(), sizeof(ColorChannelBuffer));
     
     PROFILER_POP();

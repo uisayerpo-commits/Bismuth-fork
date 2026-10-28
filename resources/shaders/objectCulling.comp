@@ -115,7 +115,9 @@ uint objectIndex;
 uint spriteType;
 vec2 objectPosition;
 vec2 vertexOffset;
-uint culledIndexBufferOutputIndex = 0u;
+// Pass 1: how many indices this work group keeps for the normal and the additive pass
+uint normalIndexCount = 0u;
+uint blendIndexCount  = 0u;
 
 //// HELPER FUNCTION PREDECLARATIONS ////
 bool isObjectOnScreen();
@@ -125,6 +127,9 @@ vec4 applyHSV(HSV hsvValue, vec4 color);
 
 //// PROCESS SPRITE FUNCTION ////
 void processSprite(uint spriteIndex) {
+    // Not drawn, until the end of this function says otherwise
+    u_spriteStates[spriteIndex] = 0u;
+
     PreCulledSprite pcSprite = u_preCulledSprites[spriteIndex];
 
     //// APPLY GROUP COMBINATION STATE ////
@@ -197,16 +202,24 @@ void processSprite(uint spriteIndex) {
     //// SAVE DATA INTO RAW SPRITE BUFFER ////
     writeRawSprite(spriteIndex, color, objectPosition, objectLocalTransform);
 
-    //// WRITE THE SPRITE INDICIES ////
-    uint indexEnd = sprite.indexStart + sprite.indexCount;
+    //// CHOOSE THE DRAW PASS ////
+    // Sprites of color channels that are blending are drawn additively. The channels can start and stop
+    // blending while the level plays, so this is decided here every frame.
+    uint blendingChannel = min(sprite.blendingChannel, uint(COLOR_CHANNEL_COUNT - 1));
 
-    for (uint i = sprite.indexStart; i < indexEnd; i++) {
-        u_culledIndicies[culledIndexBufferOutputIndex] = u_inputIndicies[i];
-        culledIndexBufferOutputIndex++;
+    if (BITMAP_GET(u_channelBlending, blendingChannel) != 0u) {
+        blendIndexCount += sprite.indexCount;
+        u_spriteStates[spriteIndex] = 2u;
+    } else {
+        normalIndexCount += sprite.indexCount;
+        u_spriteStates[spriteIndex] = 1u;
     }
 }
 
 //// MAIN FUNCTION ////
+#if CULLING_PASS == 1
+
+// Pass 1: cull the sprites of the work group, write the raw sprites, count the indices
 void main() {
     uint workGroupIndex = gl_GlobalInvocationID.x;
 
@@ -215,15 +228,88 @@ void main() {
         return;
 
     WorkGroup workGroup = u_workGroups[workGroupIndex];
-    culledIndexBufferOutputIndex = workGroup.culledIndexBufferOutputIndex;
 
     for (uint i = workGroup.inputSpriteStart; i < workGroup.inputSpriteEnd; i++)
         processSprite(u_spriteRemapIndicies[i]);
 
-    //// WRITE THE DRAW COMMAND ////
-    u_drawCommands[workGroupIndex].count = culledIndexBufferOutputIndex - workGroup.culledIndexBufferOutputIndex;
-    u_drawCommands[workGroupIndex].firstIndex = workGroup.culledIndexBufferOutputIndex;
+    u_workGroupOutputs[workGroupIndex].normalIndexCount = normalIndexCount;
+    u_workGroupOutputs[workGroupIndex].blendIndexCount  = blendIndexCount;
 }
+
+#elif CULLING_PASS == 2
+
+// Pass 2: one invocation per layer. Gives every work group of the layer its place in the index
+// buffer, in order, and writes the 2 draw commands of the layer (normal, then additive).
+void main() {
+    uint layerIndex = gl_GlobalInvocationID.x;
+    if (layerIndex >= uint(u_layers.length()))
+        return;
+
+    LayerInfo layer = u_layers[layerIndex];
+    uint end = layer.firstWorkGroup + layer.workGroupCount;
+
+    uint normalTotal = 0u;
+    uint blendTotal  = 0u;
+    for (uint w = layer.firstWorkGroup; w < end; w++) {
+        normalTotal += u_workGroupOutputs[w].normalIndexCount;
+        blendTotal  += u_workGroupOutputs[w].blendIndexCount;
+    }
+
+    // Normal indices from the start of the layer's part of the buffer, blending ones up to its end
+    uint normalBase = layer.indexBase;
+    uint blendBase  = layer.indexBase + layer.indexTotal - blendTotal;
+
+    uint normalNext = normalBase;
+    uint blendNext  = blendBase;
+    for (uint w = layer.firstWorkGroup; w < end; w++) {
+        u_workGroupOutputs[w].normalOffset = normalNext;
+        u_workGroupOutputs[w].blendOffset  = blendNext;
+        normalNext += u_workGroupOutputs[w].normalIndexCount;
+        blendNext  += u_workGroupOutputs[w].blendIndexCount;
+    }
+
+    u_drawCommands[layerIndex * 2u].count      = normalTotal;
+    u_drawCommands[layerIndex * 2u].firstIndex = normalBase;
+    u_drawCommands[layerIndex * 2u + 1u].count      = blendTotal;
+    u_drawCommands[layerIndex * 2u + 1u].firstIndex = blendBase;
+}
+
+#else
+
+// Pass 3: copy the indices of the sprites that are drawn to the place pass 2 reserved for them
+void main() {
+    uint workGroupIndex = gl_GlobalInvocationID.x;
+    if (workGroupIndex >= uint(u_workGroups.length()))
+        return;
+
+    WorkGroup workGroup = u_workGroups[workGroupIndex];
+    uint normalNext = u_workGroupOutputs[workGroupIndex].normalOffset;
+    uint blendNext  = u_workGroupOutputs[workGroupIndex].blendOffset;
+
+    for (uint i = workGroup.inputSpriteStart; i < workGroup.inputSpriteEnd; i++) {
+        uint spriteIndex = u_spriteRemapIndicies[i];
+        uint state = u_spriteStates[spriteIndex];
+        if (state == 0u)
+            continue;
+
+        InputSprite sprite = u_inputSprites[spriteIndex];
+        uint indexEnd = sprite.indexStart + sprite.indexCount;
+
+        if (state == 1u) {
+            for (uint j = sprite.indexStart; j < indexEnd; j++) {
+                u_culledIndicies[normalNext] = u_inputIndicies[j];
+                normalNext++;
+            }
+        } else {
+            for (uint j = sprite.indexStart; j < indexEnd; j++) {
+                u_culledIndicies[blendNext] = u_inputIndicies[j];
+                blendNext++;
+            }
+        }
+    }
+}
+
+#endif
 
 //// HELPER FUNCTIONS ////
 bool isObjectOnScreen() {

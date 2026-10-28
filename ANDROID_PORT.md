@@ -10,7 +10,7 @@ Windows-only function loading. Android only has OpenGL ES, so it is ported in ph
 | 2b | Smoke test of the ES design on the device (`gles_smoketest.txt`) | done, PASS |
 | M1 | Whole mod compiles for android64: ES function loader (`src/es.hpp`), shaders expanded without glslang, no hotkeys/profiler. It falls back to the vanilla renderer at runtime (the vertex shader still uses an SSBO) | in progress |
 | 3 | Shaders OpenGL ES clean (no implicit int/uint/float conversions) and raw sprites in an RGBA32F texture (imageStore in compute, texelFetch in the vertex shader) | done: the renderer runs on the phone |
-| 4 | Culling output: one draw call per layer instead of multi draw indirect (draws are looped for now, ~10k calls per frame) | todo |
+| 4 | Culling in 3 passes (cull, per-layer scan, copy): one draw call per layer and blend mode instead of ~10k per frame, blending decided on the GPU every frame | built, first run on device |
 | 5 | Fit the SSBO usage into the device limits | todo |
 | 6 | Debug on a real device | todo |
 
