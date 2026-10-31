@@ -27,6 +27,45 @@
 //#define DEBUG_LOG(...) log::info(__VA_ARGS__)
 #define DEBUG_LOG(...)
 
+namespace bismuth {
+    /*
+        True when the "Enable debug tools" setting is on. Everything that is only there for debugging
+        (logging, diagnostics, profiling timers, the debug text) checks this. With it off nothing like
+        that runs. It is read when the mod loads and again every time a level starts.
+    */
+    inline bool debugTools = false;
+}
+
+/*
+    Logging for the mod. Same as geode::log, but it does nothing unless the debug tools are on.
+    (A failure to start the renderer is silent too then, turn the debug tools on to see why.)
+*/
+namespace blog {
+    template <typename... Args>
+    inline void debug(fmt::format_string<Args...> format, Args&&... args) {
+        if (bismuth::debugTools)
+            geode::log::debug(format, std::forward<Args>(args)...);
+    }
+
+    template <typename... Args>
+    inline void info(fmt::format_string<Args...> format, Args&&... args) {
+        if (bismuth::debugTools)
+            geode::log::info(format, std::forward<Args>(args)...);
+    }
+
+    template <typename... Args>
+    inline void warn(fmt::format_string<Args...> format, Args&&... args) {
+        if (bismuth::debugTools)
+            geode::log::warn(format, std::forward<Args>(args)...);
+    }
+
+    template <typename... Args>
+    inline void error(fmt::format_string<Args...> format, Args&&... args) {
+        if (bismuth::debugTools)
+            geode::log::error(format, std::forward<Args>(args)...);
+    }
+}
+
 using u8  = uint8_t;
 using u16 = uint16_t;
 using u32 = uint32_t;

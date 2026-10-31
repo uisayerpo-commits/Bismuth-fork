@@ -17,7 +17,7 @@ void Buffer::read(void* data, usize size, usize offset) {
         return;
 
     if (offset + size > this->size) {
-        log::error("Buffer::read out of bounds (offset: {}, size: {}, buffer size: {})", offset, size, this->size);
+        blog::error("Buffer::read out of bounds (offset: {}, size: {}, buffer size: {})", offset, size, this->size);
         return;
     }
 
@@ -30,7 +30,7 @@ void Buffer::write(const void* data, usize size, usize offset) {
         return;
 
     if (offset + size > this->size) {
-        log::error("Buffer::write out of bounds (offset: {}, size: {}, buffer size: {})", offset, size, this->size);
+        blog::error("Buffer::write out of bounds (offset: {}, size: {}, buffer size: {})", offset, size, this->size);
         return;
     }
 
@@ -63,7 +63,7 @@ Buffer* Buffer::create(const char* name, usize size, GLenum usage) {
 
     GLenum error = glGetError();
     if (error != GL_NO_ERROR) {
-        log::error("failed to allocate buffer '{}' ({} bytes), GL error: 0x{:x}", name, size, (u32)error);
+        blog::error("failed to allocate buffer '{}' ({} bytes), GL error: 0x{:x}", name, size, (u32)error);
         glDeleteBuffers(1, &buffer);
         return nullptr;
     }

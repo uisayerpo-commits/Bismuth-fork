@@ -139,7 +139,7 @@ bool GroupManager::initWithObjects(cocos2d::CCArray* objects) {
     alphaIndiciesCount = alphaCombIndex;
 
     transformCombinationCount = transformCombIndex;
-    log::info("Number of unique group transformations: {}", transformCombinationCount);
+    blog::info("Number of unique group transformations: {}", transformCombinationCount);
 
     alphaValuesPerGroupId.resize(maxGroupId + 1);
     alphaValuesPerAlphaIndex.resize(alphaIndiciesCount);

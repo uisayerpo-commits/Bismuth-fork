@@ -48,9 +48,6 @@ void ObjectBatch::destroyBuffers() {
 
 #ifdef GEODE_ANDROID
 
-// The unit the vertex shader reads the raw sprites from, no other code in the game uses it
-static constexpr u32 RAW_SPRITE_TEXTURE_UNIT = 15;
-
 /*
     Creates the texture the culling compute shader writes the raw sprites into
     (RAW_SPRITE_TEXELS RGBA32F texels per sprite, see headers/shared.h).
@@ -64,7 +61,7 @@ static u32 createRawSpriteTexture(usize spriteCount) {
     i32 maxSize = 0;
     glGetIntegerv(GL_MAX_TEXTURE_SIZE, &maxSize);
     if (height > maxSize) {
-        log::error("too many sprites for the raw sprite texture ({} x {} texels, the GPU supports {})", width, height, maxSize);
+        blog::error("too many sprites for the raw sprite texture ({} x {} texels, the GPU supports {})", width, height, maxSize);
         return 0;
     }
 
@@ -86,7 +83,7 @@ static u32 createRawSpriteTexture(usize spriteCount) {
 
     GLenum error = glGetError();
     if (error != GL_NO_ERROR) {
-        log::error("failed to create the raw sprite texture ({} x {} texels), GL error: 0x{:x}", width, height, (u32)error);
+        blog::error("failed to create the raw sprite texture ({} x {} texels), GL error: 0x{:x}", width, height, (u32)error);
         glDeleteTextures(1, &texture);
         return 0;
     }
@@ -153,17 +150,65 @@ ObjectBatch::DrawStats ObjectBatch::readDrawStats() {
     return stats;
 }
 
-void ObjectBatch::bindRawSpriteTexture(Shader* shader) {
-    #ifdef GEODE_ANDROID
-    if (!rawSpriteTexture)
+void ObjectBatch::bindDrawBuffers() {
+    if (!sortedBatch)
         return;
 
-    glActiveTexture(GL_TEXTURE0 + RAW_SPRITE_TEXTURE_UNIT);
-    glBindTexture(GL_TEXTURE_2D, rawSpriteTexture);
-    glActiveTexture(GL_TEXTURE0);
+    // The vertex shader only reads the game state uniform buffer (and the raw sprites, below)
+    renderer.bindCullingComputeShaderBuffers();
+    sortedBatch->drawCommandBuffer->bindAs(GL_DRAW_INDIRECT_BUFFER);
 
-    shader->setInt(shader->location("u_rawSpriteTexture"), RAW_SPRITE_TEXTURE_UNIT);
+    #ifdef GEODE_ANDROID
+    if (rawSpriteTexture) {
+        glActiveTexture(GL_TEXTURE0 + RAW_SPRITE_TEXTURE_UNIT);
+        glBindTexture(GL_TEXTURE_2D, rawSpriteTexture);
+        glActiveTexture(GL_TEXTURE0);
+    }
     #endif
+}
+
+void ObjectBatch::updateLayerMasks() {
+    const u32* blending = renderer.getChannelBlendingBits();
+    if (!sortedBatch || !blending)
+        return;
+
+    static_assert(sizeof(lastBlendingBits) == COLOR_CHANNEL_BLENDING_WORDS * sizeof(u32));
+
+    // Only changes when a color trigger changes the blending of a channel
+    if (layerMasksValid && memcmp(lastBlendingBits, blending, sizeof(lastBlendingBits)) == 0)
+        return;
+
+    memcpy(lastBlendingBits, blending, sizeof(lastBlendingBits));
+    layerDrawMasks.assign(sortedBatch->layerCount, 0);
+
+    for (u32 slot = 0; slot < sortedBatch->layerCount && slot < sortedBatch->layerChannelBits.size(); slot++) {
+        const auto& channels = sortedBatch->layerChannelBits[slot];
+
+        u8 mask = 0;
+        for (u32 word = 0; word < COLOR_CHANNEL_BLENDING_WORDS; word++) {
+            if (channels[word] & ~blending[word]) mask |= 1; // a channel that doesn't blend
+            if (channels[word] &  blending[word]) mask |= 2; // a channel that blends
+        }
+        layerDrawMasks[slot] = mask;
+    }
+
+    layerMasksValid = true;
+}
+
+bool ObjectBatch::isLayerVisible(const LayerKey& layer) const {
+    if (!sortedBatch)
+        return false;
+
+    LayerKey key = layer;
+    key.blending = false;
+
+    auto it = sortedBatch->workGroupRangePerLayerKey.find(key);
+    if (it == sortedBatch->workGroupRangePerLayerKey.end())
+        return false;
+
+    u32 slot = it->second.slot;
+    u8 mask = slot < layerDrawMasks.size() ? layerDrawMasks[slot] : 3;
+    return (mask & (layer.blending ? 2 : 1)) != 0;
 }
 
 SpriteVertexTransforms ObjectBatch::getSpriteVertexTransform(
@@ -415,7 +460,7 @@ bool ObjectBatch::finishWriting() {
     if (success)
         prepareVAO();
     else {
-        log::error("could not upload the object batch to the GPU (out of video memory?)");
+        blog::error("could not upload the object batch to the GPU (out of video memory?)");
         destroyBuffers();
     }
 
@@ -443,12 +488,9 @@ void ObjectBatch::draw(const LayerKey& layer) {
 
     u32 command = rangeIt->second.slot * 2 + (layer.blending ? 1 : 0);
 
-    // The vertex shader only needs the game state uniform buffer, everything else it reads from the
-    // raw sprite texture. The storage buffers were bound by predraw.
-    renderer.bindCullingComputeShaderBuffers();
-    sortedBatch->drawCommandBuffer->bindAs(GL_DRAW_INDIRECT_BUFFER);
+    // The uniform buffer, the draw commands and the raw sprite texture are bound once per frame
+    // (bindDrawBuffers), the index buffer is part of the vertex array.
     glBindVertexArray(vao);
-    culledIndexBuffer->bindAs(GL_ELEMENT_ARRAY_BUFFER);
 
     // One draw call for the whole layer, the culling passes put its indices together in order
     bgl::multiDrawElementsIndirect(
@@ -473,6 +515,8 @@ void ObjectBatch::predraw() {
         PROFILER_POP();
         return;
     }
+
+    updateLayerMasks();
 
     cullingComputeShaderTimer.start();
 
@@ -576,4 +620,8 @@ void ObjectBatch::prepareVAO() {
     vertexBuffer->bindAs(GL_ARRAY_BUFFER);
 
     OBJECT_VERTEX_ATTRIBUTES(VERTEX_ATTRIBUTE_AS_ATTRIB_POINTER_CALL)
+
+    // The index buffer is part of the vertex array, so it is bound here once
+    // and not before every draw call. The culling passes fill it every frame.
+    culledIndexBuffer->bindAs(GL_ELEMENT_ARRAY_BUFFER);
 }

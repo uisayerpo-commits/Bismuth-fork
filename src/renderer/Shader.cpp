@@ -27,14 +27,14 @@ void printErrorLog(std::string str) {
     while (*log) {
         if (*log == '\n') {
             *log = 0;
-            log::error("    {}", start);
+            blog::error("    {}", start);
             start = log + 1;
         }
         log++;
     }
 
     if (*start != 0)
-        log::error("    {}", start);
+        blog::error("    {}", start);
 }
 
 #ifdef GEODE_ANDROID
@@ -48,7 +48,7 @@ enum EShLanguage { EShLangVertex, EShLangFragment, EShLangCompute };
 
 static bool expandIncludes(const std::string& code, std::string& out, int depth) {
     if (depth > 16) {
-        log::error("shader includes are nested too deeply");
+        blog::error("shader includes are nested too deeply");
         return false;
     }
 
@@ -71,14 +71,14 @@ static bool expandIncludes(const std::string& code, std::string& out, int depth)
             usize open  = trimmed.find('"');
             usize close = open == std::string_view::npos ? open : trimmed.find('"', open + 1);
             if (close == std::string_view::npos) {
-                log::error("invalid #include in shader: {}", std::string(trimmed));
+                blog::error("invalid #include in shader: {}", std::string(trimmed));
                 return false;
             }
 
             std::string headerName(trimmed.substr(open + 1, close - open - 1));
             auto header = readResourceFile(headerName);
             if (!header) {
-                log::error("could not include header file at: {}", headerName);
+                blog::error("could not include header file at: {}", headerName);
                 return false;
             }
 
@@ -98,7 +98,7 @@ static bool expandIncludes(const std::string& code, std::string& out, int depth)
 static std::optional<std::string> preprocessShader(EShLanguage stage, const std::string& code, const std::string& name) {
     std::string expanded;
     if (!expandIncludes(code, expanded, 0)) {
-        log::error("failed to expand the includes of shader '{}'", name);
+        blog::error("failed to expand the includes of shader '{}'", name);
         return std::nullopt;
     }
 
@@ -128,7 +128,7 @@ public:
     ) override {
         auto res = readResourceFile(headerName);
         if (!res) {
-            geode::log::error("could not include header file at: {}", headerName);
+            blog::error("could not include header file at: {}", headerName);
             return nullptr;
         }
 
@@ -192,7 +192,7 @@ static std::optional<std::string> preprocessShader(EShLanguage stage, const std:
         case EShLangCompute: shaderType = "compute"; break;
         default: shaderType = "<unkown>"; break;
         }
-        log::error("failed to preprocess {} shader (glslang):", shaderType);
+        blog::error("failed to preprocess {} shader (glslang):", shaderType);
         printErrorLog(shader->getInfoLog());
         return std::nullopt;
     }
@@ -211,7 +211,7 @@ static std::optional<std::string> preprocessShader(EShLanguage stage, const std:
 static std::optional<std::string> preprocessShader(const fs::path& path, std::string preCode, EShLanguage stage) {
     auto source = readResourceFile(path);
     if (!source) {
-        geode::log::error("could not find shader at path: {}", path);
+        blog::error("could not find shader at path: {}", path);
         return std::nullopt;
     }
     
@@ -257,7 +257,7 @@ static u32 createShader(i32 type, const char* source) {
         case GL_FRAGMENT_SHADER: shaderType = "fragment"; break;
         case GL_COMPUTE_SHADER: shaderType = "compute"; break;
         }
-        geode::log::error("failed to compile {} shader:", shaderType);
+        blog::error("failed to compile {} shader:", shaderType);
         printErrorLog(getShaderInfoLog(shader));
         glDeleteShader(shader);
         return 0;
@@ -284,7 +284,7 @@ Shader* Shader::create(const ShaderSources& sources) {
     int success;
     glGetProgramiv(program, GL_LINK_STATUS, &success);
     if (!success) {
-        geode::log::error("Failed to link shader program:");
+        blog::error("Failed to link shader program:");
         printErrorLog(getProgramInfoLog(program));
         glDeleteProgram(program);
         glDeleteShader(vertexShader);
@@ -309,7 +309,7 @@ static u32 createShaderProgram(const std::vector<u32>& shaders) {
     int success;
     glGetProgramiv(program, GL_LINK_STATUS, &success);
     if (!success) {
-        geode::log::error("Failed to link shader program:");
+        blog::error("Failed to link shader program:");
         printErrorLog(getProgramInfoLog(program));
         glDeleteProgram(program);
         return 0;

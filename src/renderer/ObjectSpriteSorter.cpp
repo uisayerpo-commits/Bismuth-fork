@@ -72,9 +72,11 @@ UPtr<SortedObjectBatch> ObjectSpriteSorter::generateSortedBatch() {
     u32 outIndex = 0;
     std::map<LayerKey, WorkGroupRange> workGroupRangesPerLayerKey;
     std::vector<LayerInfo> layerInfos;
+    std::vector<std::array<u32, 35>> layerChannelBits;
+    static_assert(COLOR_CHANNEL_BLENDING_WORDS == 35);
 
     for (auto& [key, layer] : sortedSpriteLayers) {
-        // log::info("Process layer: {}", key.toString());
+        // blog::info("Process layer: {}", key.toString());
         u32 workGroupStartIndex = workGroups.size();
         u32 layerIndexBase = outIndex;
         generateWorkGroupsForLayer(key, approxSpritesPerWorkGroup, outIndex, spriteRemap, workGroups);
@@ -86,6 +88,15 @@ UPtr<SortedObjectBatch> ObjectSpriteSorter::generateSortedBatch() {
             .slot   = (u32)layerInfos.size()
         };
 
+        // The color channels the sprites of the layer use. The CPU uses this to skip the draw pass
+        // of a layer when none of its channels is in that blending state.
+        std::array<u32, 35> channelBits {};
+        for (auto* entry : layer) {
+            u32 channel = std::min<u32>(entry->colorChannelId, COLOR_CHANNEL_COUNT - 1);
+            channelBits[channel >> 5] |= 1u << (channel & 31);
+        }
+        layerChannelBits.push_back(channelBits);
+
         // The layer owns the part of the culled index buffer that fits all of its indices
         layerInfos.push_back({
             .firstWorkGroup = workGroupStartIndex,
@@ -94,11 +105,11 @@ UPtr<SortedObjectBatch> ObjectSpriteSorter::generateSortedBatch() {
             .indexTotal = outIndex - layerIndexBase
         });
 
-        // log::info("Layer processed {}: (index={}, size={})", key.toString(), workGroupStartIndex, workGroupEndIndex - workGroupStartIndex);
+        // blog::info("Layer processed {}: (index={}, size={})", key.toString(), workGroupStartIndex, workGroupEndIndex - workGroupStartIndex);
     }
 
-    log::info("Approx sprites per work group: {}", approxSpritesPerWorkGroup);
-    log::info("Work group count: {}", workGroups.size());
+    blog::info("Approx sprites per work group: {}", approxSpritesPerWorkGroup);
+    blog::info("Work group count: {}", workGroups.size());
 
     Buffer* spriteRemapBuffer = Buffer::createStaticDraw(
         "Sprite remap buffer",
@@ -135,6 +146,7 @@ UPtr<SortedObjectBatch> ObjectSpriteSorter::generateSortedBatch() {
     batch->workGroupBuffer   = workGroupBuffer;
     batch->workGroupCount    = workGroups.size();
     batch->layerCount        = layerInfos.size();
+    batch->layerChannelBits  = std::move(layerChannelBits);
     batch->workGroupRangePerLayerKey = workGroupRangesPerLayerKey;
 
     // From here on the batch owns the buffers, it destroys what was created if it is dropped early
@@ -161,7 +173,7 @@ UPtr<SortedObjectBatch> ObjectSpriteSorter::generateSortedBatch() {
 
     batch->drawCommandBuffer->write(drawCommands.data(), batch->drawCommandBuffer->getSize());
 
-    log::info("Layer count: {}", layerInfos.size());
+    blog::info("Layer count: {}", layerInfos.size());
 
     return batch;
 }
@@ -194,7 +206,7 @@ void ObjectSpriteSorter::generateWorkGroupsForLayer(
 
         u32 endIndex = inputSpriteIndiciesOut.size();
 
-        // log::info("  - Work group {} = (index={}, count={}), {}", workGroupsOut.size(), startIndex, endIndex - startIndex, culledOutputIndex);
+        // blog::info("  - Work group {} = (index={}, count={}), {}", workGroupsOut.size(), startIndex, endIndex - startIndex, culledOutputIndex);
 
         workGroupsOut.push_back({
             .inputSpriteStart = startIndex,

@@ -11,6 +11,7 @@ using namespace geode::prelude;
 std::chrono::steady_clock::time_point modStartTime;
 
 $on_mod(Loaded) {
+    bismuth::debugTools = Mod::get()->getSettingValue<bool>("ingame_enable");
     modStartTime = std::chrono::high_resolution_clock::now();
 }
 
@@ -63,12 +64,12 @@ bool bgl::init() {
 
     int major = 0, minor = 0;
     if (sscanf(versionString, "%d.%d", &major, &minor) != 2) {
-        log::error("could not parse OpenGL version '{}', Bismuth will not be used", versionString);
+        blog::error("could not parse OpenGL version '{}', Bismuth will not be used", versionString);
         return false;
     }
 
     if (major < 4 || (major == 4 && minor < 3)) {
-        log::error("OpenGL {} is too old, Bismuth needs OpenGL 4.3 or newer. Falling back to the vanilla renderer", versionString);
+        blog::error("OpenGL {} is too old, Bismuth needs OpenGL 4.3 or newer. Falling back to the vanilla renderer", versionString);
         return false;
     }
 
@@ -77,7 +78,7 @@ bool bgl::init() {
     memoryBarrier             = reinterpret_cast<MemoryBarrierProc>(loadGLProc("glMemoryBarrier"));
 
     if (!dispatchCompute || !multiDrawElementsIndirect || !memoryBarrier) {
-        log::error("the graphics driver is missing required OpenGL functions (compute: {}, multi draw indirect: {}, memory barrier: {}). Falling back to the vanilla renderer",
+        blog::error("the graphics driver is missing required OpenGL functions (compute: {}, multi draw indirect: {}, memory barrier: {}). Falling back to the vanilla renderer",
             dispatchCompute != nullptr, multiDrawElementsIndirect != nullptr, memoryBarrier != nullptr);
         return false;
     }
@@ -112,7 +113,7 @@ bool bgl::init() {
     state = -1;
 
     if (major < 3 || (major == 3 && minor < 1)) {
-        log::error("OpenGL ES {}.{} is too old, Bismuth needs OpenGL ES 3.1 (compute shaders). Falling back to the vanilla renderer ('{}')", major, minor, versionString);
+        blog::error("OpenGL ES {}.{} is too old, Bismuth needs OpenGL ES 3.1 (compute shaders). Falling back to the vanilla renderer ('{}')", major, minor, versionString);
         return false;
     }
 
@@ -122,11 +123,11 @@ bool bgl::init() {
                     es::VertexAttribIPointer && es::GenVertexArrays && es::BindVertexArray &&
                     es::TexStorage2D && es::BindImageTexture;
     if (!complete) {
-        log::error("the graphics driver is missing OpenGL ES functions the renderer needs. Falling back to the vanilla renderer");
+        blog::error("the graphics driver is missing OpenGL ES functions the renderer needs. Falling back to the vanilla renderer");
         return false;
     }
 
-    log::info("OpenGL ES {}.{} ('{}')", major, minor, versionString);
+    blog::info("OpenGL ES {}.{} ('{}')", major, minor, versionString);
     state = 1;
     return true;
 }

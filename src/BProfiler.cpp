@@ -16,9 +16,8 @@ static inline void addToMap(std::map<std::string, u64>& map, std::string name, u
         map[name] = num;
 }
 
-BProfiler::Timer BProfiler::start(const std::string& name) {
-    BProfiler::Timer timer { name };
-    return timer;
+BProfiler::Timer BProfiler::start(const char* name) {
+    return BProfiler::Timer { name };
 }
 
 bool BProfiler::isUsingAverages() {
@@ -48,6 +47,6 @@ void BProfiler::frameEnd() {
     currentTimes.clear();
 }
 
-void BProfiler::end(std::string name, u64 time) {
+void BProfiler::end(const char* name, u64 time) {
     addToMap(currentTimes, name, time);
 }

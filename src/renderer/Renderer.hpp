@@ -119,6 +119,11 @@ public:
         return cullingComputeShader;
     }
 
+    // One bit per color channel, 1 while the channel is blending (NULL before the renderer is ready)
+    inline const u32* getChannelBlendingBits() const {
+        return colorChannelBuffer ? colorChannelBuffer->u_channelBlending : nullptr;
+    }
+
     inline Shader* getCullingScanShader() const {
         return cullingScanShader;
     }
@@ -193,8 +198,10 @@ private:
     Shader* cullingScanShader = nullptr;
     Shader* cullingCopyShader = nullptr;
 
-    // CPU side copy of the color channel buffer, uploaded every frame
+    // CPU side copy of the color channel buffer, uploaded when it changed
     UPtr<ColorChannelBuffer> colorChannelBuffer;
+    UPtr<ColorChannelBuffer> lastUploadedColorChannels;
+    bool colorChannelsUploaded = false;
     Buffer* colorChannelBufferObject = nullptr;
 
     Buffer* srbBuffer = nullptr;

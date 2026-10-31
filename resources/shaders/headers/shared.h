@@ -118,6 +118,8 @@ mat2 scaleMatrix(float scale) {
         texel 1: position (xy), local transform first column (zw)
         texel 2: local transform second column (xy), unused (zw)
 */
+// The texture unit the vertex shader reads the raw sprites from, nothing else in the game uses it
+#define RAW_SPRITE_TEXTURE_UNIT  15
 #define RAW_SPRITE_TEXTURE_WIDTH 4096u
 #define RAW_SPRITE_TEXELS        3u
 

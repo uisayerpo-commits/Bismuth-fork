@@ -37,3 +37,9 @@ The link step then fails, but the log lists the errors of every file. Turn it of
 On Android `Renderer::logDiagnostics` writes two `[diag]` lines to the Geode log every ~3 seconds while a level is
 running: camera and matrix, how many group combinations are hidden/visible/fading, how many color channels have
 alpha, how many indices the culling shader kept, and GL errors. Remove it when the port is done.
+
+## Debug tools
+Everything that is only for debugging is behind the "Enable debug tools" setting (`bismuth::debugTools`, read when a
+level starts): all logging (`blog::`), the `[diag]` counters (compiled out of the culling shader when off), the
+debug text and the profiler timers. With it off the mod never logs. Note that this setting also turns off the
+CPU side optimizations (existing behavior, see Renderer::useOptimizations), so measure FPS with it off.

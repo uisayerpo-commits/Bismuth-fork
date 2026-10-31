@@ -23,10 +23,20 @@ void ObjectBatchNode::draw() {
     if (!renderer)
         return;
 
+    auto& batch = renderer->getObjectBatch();
+
+    // Nothing in this layer can be drawn in this pass right now, don't touch any GL state for it
+    if (!batch.isLayerVisible(layerId))
+        return;
+
     PROFILER_PUSH("ObjectBatchNode::draw");
 
-    auto shader = renderer->prepareDraw();
-    shader->setTexture("u_spriteSheetTexture", 0, spriteSheetTexture);
+    // Saves the state of the game, uses the shader. The sprite sheet and raw sprite texture
+    // samplers were set once when the shader was created.
+    renderer->prepareDraw();
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, spriteSheetTexture->getName());
 
     glEnable(GL_BLEND);
     if (layerId.blending)
@@ -34,8 +44,7 @@ void ObjectBatchNode::draw() {
     else
         glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 
-    renderer->getObjectBatch().bindRawSpriteTexture(shader);
-    renderer->getObjectBatch().draw(layerId);
+    batch.draw(layerId);
 
     renderer->finishDraw();
     PROFILER_POP();

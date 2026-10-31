@@ -28,6 +28,8 @@ STORAGE_BUFFER(DRAW_COMMAND_BUFFER_BINDING) DrawCommandBuffer {
     DrawCommand u_drawCommands[];
 };
 
+// The diagnostics are only compiled in when the debug tools are on (BISMUTH_DIAGNOSTICS)
+#ifdef BISMUTH_DIAGNOSTICS
 //// DIAGNOSTICS ////
 // Counters the CPU reads back every few seconds (see Renderer::logDiagnostics):
 //  0: sprites on screen        1: alpha is 0 (not drawn)    2: NaN or infinity in the sprite data
@@ -86,6 +88,7 @@ void collectAlphaDiagnostics(uint colorChannel, float channelAlpha, float groupO
     uint base = hidden ? uint(DIAGNOSTICS_HIDDEN_CHANNEL_BASE) : uint(DIAGNOSTICS_DRAWN_CHANNEL_BASE);
     atomicAdd(u_diagnostics[base + colorChannel], 1u);
 }
+#endif
 
 //// RAW SPRITE OUTPUT ////
 #ifdef RAW_SPRITES_IN_TEXTURE
@@ -187,14 +190,18 @@ void processSprite(uint spriteIndex) {
         color = applyHSV(object.detailHSV, color);
     }
 
+    #ifdef BISMUTH_DIAGNOSTICS
     if ((u_gameStateFlags & GAME_STATE_COLLECT_DIAGNOSTICS) != 0u)
         collectAlphaDiagnostics(colorChannel, color.a, state.opacity, object.opacity);
+    #endif
 
     color.a *= state.opacity * object.opacity;
     color.rgb *= color.a;
 
+    #ifdef BISMUTH_DIAGNOSTICS
     if ((u_gameStateFlags & GAME_STATE_COLLECT_DIAGNOSTICS) != 0u)
         collectDiagnostics(color, objectPosition, objectLocalTransform);
+    #endif
 
     if (color.a <= 0.0)
         return;

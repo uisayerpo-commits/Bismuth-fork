@@ -1,5 +1,7 @@
 #pragma once
 
+#include <array>
+
 #include <common.hpp>
 #include <ObjectUtils.hpp>
 #include "Buffer.hpp"
@@ -30,6 +32,10 @@ struct SortedObjectBatch {
 
     u32 workGroupCount = 0;
     u32 layerCount = 0;
+
+    // For every layer (by slot): one bit for each color channel its sprites use
+    // (COLOR_CHANNEL_BLENDING_WORDS words, see headers/colorChannelBuffer.h)
+    std::vector<std::array<u32, 35>> layerChannelBits;
 
     std::map<LayerKey, WorkGroupRange> workGroupRangePerLayerKey;
 

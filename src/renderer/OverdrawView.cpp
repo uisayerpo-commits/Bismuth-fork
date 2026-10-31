@@ -171,7 +171,7 @@ class $modify(OverdrawViewCCDirector, CCDirector) {
 // #include <Geode/modify/CCKeyboardDispatcher.hpp>
 // class $modify(OverdrawViewCCKeyboardDispatcher, CCKeyboardDispatcher) {
 //     bool dispatchKeyboardMSG(enumKeyCodes key, bool keyDown, bool isKeyRepeat) {
-//         log::info("ofuck {} {} {}", (u32)key, keyDown, isKeyRepeat);
+//         blog::info("ofuck {} {} {}", (u32)key, keyDown, isKeyRepeat);
 //         if (instance) {
 //             if (keyDown && key == KEY_F4 && !isKeyRepeat)
 //                 instance->setEnabled(!instance->isEnabled());

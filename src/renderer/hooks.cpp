@@ -31,7 +31,7 @@ class $modify(RendererPlayLayer, PlayLayer) {
             auto batchLayer = this->m_objectLayer;
             if (!batchLayer) {
                 // Don't return here, the level still has to be reset or it never starts
-                log::error("failed to attach renderer: batch layer not found");
+                blog::error("failed to attach renderer: batch layer not found");
             } else {
                 auto renderer = Renderer::create(this, m_objects);
                 if (renderer)

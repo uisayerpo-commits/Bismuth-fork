@@ -54,6 +54,9 @@ bool Renderer::init(PlayLayer* layer, CCArray* levelObjects) {
 
     this->layer = layer;
 
+    // Read first, everything below may want to log
+    bismuth::debugTools = Mod::get()->getSettingValue<bool>("ingame_enable");
+
     if (!Mod::get()->getSettingValue<bool>("enabled"))
         return false;
 
@@ -70,7 +73,7 @@ bool Renderer::init(PlayLayer* layer, CCArray* levelObjects) {
 
     ingameEnableDisable = Mod::get()->getSettingValue<bool>("ingame_enable");
 
-    log::info("OpenGL Version: {}", (const char*)glGetString(GL_VERSION));
+    blog::info("OpenGL Version: {}", (const char*)glGetString(GL_VERSION));
 
     auto tcache = cocos2d::CCTextureCache::get();
     // TODO: Add text sheet
@@ -91,8 +94,8 @@ bool Renderer::init(PlayLayer* layer, CCArray* levelObjects) {
     std::vector<GameObject*> objects;
     objects.reserve(levelObjects->count());
 
-    log::info("Level contains {} object(s)", levelObjects->count());
-    log::info("Sorting objects...");
+    blog::info("Level contains {} object(s)", levelObjects->count());
+    blog::info("Sorting objects...");
     for (auto object : CCArrayExt<GameObject*>(levelObjects)) {
         if (object == layer->m_anticheatSpike) {
             DEBUG_LOG("- anti-cheat spike");
@@ -124,7 +127,7 @@ bool Renderer::init(PlayLayer* layer, CCArray* levelObjects) {
         objects.push_back(object);
     }
 
-    log::info("Generating static rendering buffer....");
+    blog::info("Generating static rendering buffer....");
 
     renderedGameObjectCount = objects.size();
     
@@ -132,20 +135,35 @@ bool Renderer::init(PlayLayer* layer, CCArray* levelObjects) {
         return false;
 
     u32 groupCombCount = groupManager.getGroupCombinationCount();
-    log::info("{} group combinations detected", groupCombCount);
+    blog::info("{} group combinations detected", groupCombCount);
 
-    log::info("Compiling shaders...");
+    blog::info("Compiling shaders...");
 
     std::map<std::string, std::string> shaderMacroVariables;
 
     shaderMacroVariables["TOTAL_OBJECT_COUNT"] = std::to_string(renderedGameObjectCount == 0 ? 1 : renderedGameObjectCount);
     shaderMacroVariables["GROUP_ID_LIMIT"]     = std::to_string(groupCombCount);
+    if (bismuth::debugTools)
+        shaderMacroVariables["BISMUTH_DIAGNOSTICS"] = "1"; // see objectCulling.comp
 
     // The shaders are compiled before the vertex data is generated. If the GPU or
     // driver can't handle them there is no reason to do the expensive part.
     shader = Shader::create("objectDrawing.vert", "objectDrawing.frag", shaderMacroVariables);
     if (!shader)
         return false;
+
+    // The samplers never change, so they are set once here and not before every layer.
+    // Setting a uniform needs the shader in use, which would confuse the engine's idea of the
+    // current shader, so the one that is current now is put back.
+    {
+        GLint previousProgram = 0;
+        glGetIntegerv(GL_CURRENT_PROGRAM, &previousProgram);
+
+        shader->setInt(shader->location("u_spriteSheetTexture"), 0);
+        shader->setInt(shader->location("u_rawSpriteTexture"), RAW_SPRITE_TEXTURE_UNIT);
+
+        glUseProgram(previousProgram);
+    }
 
     // The culling is done in 3 passes (see headers/workGroupBuffer.h), one program for each
     auto cullingPassMacros = [&](const char* pass) {
@@ -158,7 +176,7 @@ bool Renderer::init(PlayLayer* layer, CCArray* levelObjects) {
     cullingScanShader    = Shader::createCompute("objectCulling.comp", cullingPassMacros("2"));
     cullingCopyShader    = Shader::createCompute("objectCulling.comp", cullingPassMacros("3"));
     if (!cullingComputeShader || !cullingScanShader || !cullingCopyShader) {
-        log::error("the object culling compute shaders failed to compile, falling back to the vanilla renderer");
+        blog::error("the object culling compute shaders failed to compile, falling back to the vanilla renderer");
         return false;
     }
 
@@ -174,7 +192,7 @@ bool Renderer::init(PlayLayer* layer, CCArray* levelObjects) {
     if (!gameStateBuffer)
         return false;
 
-    log::info("Generating vertex buffer...");
+    blog::info("Generating vertex buffer...");
 
     for (auto& value : colorChannelsIsBlending)
         value = false;
@@ -190,29 +208,32 @@ bool Renderer::init(PlayLayer* layer, CCArray* levelObjects) {
     // Everything that can fail is done, now it is safe to touch the scene
     generateBatchNodes();
 
-    debugText = CCLabelBMFont::create("", "chatFont.fnt");
-    debugTextOutline1 = CCLabelBMFont::create("", "chatFont.fnt");
-    debugTextOutline2 = CCLabelBMFont::create("", "chatFont.fnt");
+    // The debug text is only there with the debug tools on, otherwise it would be 3 more nodes to draw
+    if (bismuth::debugTools) {
+        debugText = CCLabelBMFont::create("", "chatFont.fnt");
+        debugTextOutline1 = CCLabelBMFont::create("", "chatFont.fnt");
+        debugTextOutline2 = CCLabelBMFont::create("", "chatFont.fnt");
 
-    debugTextOutline1->setColor({0, 0, 0});
-    debugTextOutline1->setOpacity(200);
-    debugTextOutline2->setColor({0, 0, 0});
-    debugTextOutline2->setOpacity(200);
+        debugTextOutline1->setColor({0, 0, 0});
+        debugTextOutline1->setOpacity(200);
+        debugTextOutline2->setColor({0, 0, 0});
+        debugTextOutline2->setOpacity(200);
 
-    debugText->setAnchorPoint(CCPoint(0, 1));
-    debugText->setPosition(1, CCDirector::get()->getWinSize().height - 8);
-    debugText->setScale(0.5);
-    layer->addChild(debugText, 1000);
+        debugText->setAnchorPoint(CCPoint(0, 1));
+        debugText->setPosition(1, CCDirector::get()->getWinSize().height - 8);
+        debugText->setScale(0.5);
+        layer->addChild(debugText, 1000);
 
-    debugTextOutline1->setAnchorPoint(CCPoint(0, 1));
-    debugTextOutline1->setPosition(1 - 0.5, CCDirector::get()->getWinSize().height - 8 - 0.5);
-    debugTextOutline1->setScale(0.5);
-    layer->addChild(debugTextOutline1, 999);
+        debugTextOutline1->setAnchorPoint(CCPoint(0, 1));
+        debugTextOutline1->setPosition(1 - 0.5, CCDirector::get()->getWinSize().height - 8 - 0.5);
+        debugTextOutline1->setScale(0.5);
+        layer->addChild(debugTextOutline1, 999);
 
-    debugTextOutline2->setAnchorPoint(CCPoint(0, 1));
-    debugTextOutline2->setPosition(1 + 0.5, CCDirector::get()->getWinSize().height - 8 + 0.5);
-    debugTextOutline2->setScale(0.5);
-    layer->addChild(debugTextOutline2, 999);
+        debugTextOutline2->setAnchorPoint(CCPoint(0, 1));
+        debugTextOutline2->setPosition(1 + 0.5, CCDirector::get()->getWinSize().height - 8 + 0.5);
+        debugTextOutline2->setScale(0.5);
+        layer->addChild(debugTextOutline2, 999);
+    }
 
     /*
     if (useOptimizations()) {
@@ -237,7 +258,7 @@ bool Renderer::init(PlayLayer* layer, CCArray* levelObjects) {
 
     reset();
 
-    log::info("Renderer initialized");
+    blog::info("Renderer initialized");
     return true;
 }
 
@@ -288,7 +309,7 @@ void Renderer::terminate() {
     if (currentRenderer == this)
         currentRenderer = nullptr;
 
-    log::info("Renderer terminated");
+    blog::info("Renderer terminated");
 }
 
 void Renderer::logDiagnostics() {
@@ -366,7 +387,7 @@ void Renderer::logDiagnostics() {
     glGetIntegerv(GL_FRAMEBUFFER_BINDING, &framebuffer);
     glGetIntegerv(GL_VIEWPORT, viewport);
 
-    log::info(
+    blog::info(
         "[diag] t={:.1f} dead={} | camera pos=({:.1f}, {:.1f}) size=({:.1f}, {:.1f}) right=({:.2f}, {:.2f}) up=({:.2f}, {:.2f}) | mvp: {:.5f} {:.5f} {:.3f} {:.3f}",
         gameState.u_timer, (gameState.u_gameStateFlags & GAME_STATE_IS_PLAYER_DEAD) != 0,
         gameState.u_cameraPosition.x, gameState.u_cameraPosition.y,
@@ -375,7 +396,7 @@ void Renderer::logDiagnostics() {
         gameState.u_cameraUp.x, gameState.u_cameraUp.y,
         gameState.u_mvp[0][0], gameState.u_mvp[1][1], gameState.u_mvp[3][0], gameState.u_mvp[3][1]
     );
-    log::info(
+    blog::info(
         "[diag] groups: {} hidden, {} visible, {} fading, {} with NaN/inf, {} collapsed, {} far away | channels with alpha: {} ({} dark, {} bright) | commands: {} ({} not empty), {} indices, largest {} | GL errors:{}",
         hiddenGroups, visibleGroups, fadingGroups, brokenGroups, collapsedGroups, farGroups,
         visibleChannels, darkChannels, brightChannels,
@@ -399,13 +420,13 @@ void Renderer::logDiagnostics() {
         return text.empty() ? std::string(" none") : text;
     };
 
-    log::info(
+    blog::info(
         "[diag] alpha 0 because of (can overlap): channel alpha {}, group opacity {}, object opacity {} | only the channel alpha: {}, only the group: {}, only the object: {}",
         gpu[8], gpu[9], gpu[10], gpu[11], gpu[12], gpu[13]
     );
-    log::info("[diag] channels of drawn sprites:{}", topChannels(DIAGNOSTICS_DRAWN_CHANNEL_BASE));
-    log::info("[diag] channels of sprites with alpha 0:{}", topChannels(DIAGNOSTICS_HIDDEN_CHANNEL_BASE));
-    log::info(
+    blog::info("[diag] channels of drawn sprites:{}", topChannels(DIAGNOSTICS_DRAWN_CHANNEL_BASE));
+    blog::info("[diag] channels of sprites with alpha 0:{}", topChannels(DIAGNOSTICS_HIDDEN_CHANNEL_BASE));
+    blog::info(
         "[diag] GPU sprites: {} on screen = {} drawn + {} alpha 0 + {} NaN/inf | of the drawn: {} almost black, {} bright, {} collapsed transform, average alpha {:.2f} | framebuffer {}, viewport {}x{}",
         gpu[0], gpu[6], gpu[1], gpu[2], gpu[3], gpu[4], gpu[7],
         gpu[6] > 0 ? (gpu[5] / 1000.0 / gpu[6]) : 0.0,
@@ -501,9 +522,15 @@ void Renderer::prepareColorChannelBuffer() {
             colorChannelBuffer->u_channelBlending[i >> 5] |= 1u << (i & 31);
     }
 
-    colorChannelBufferObject->write(colorChannelBuffer.get(), sizeof(ColorChannelBuffer));
-    
-    PROFILER_POP();
+    // Colors only change when a trigger runs or something pulses, most frames nothing did
+    if (!lastUploadedColorChannels)
+        lastUploadedColorChannels = makeUnique<ColorChannelBuffer>();
+
+    if (!colorChannelsUploaded || memcmp(colorChannelBuffer.get(), lastUploadedColorChannels.get(), sizeof(ColorChannelBuffer)) != 0) {
+        colorChannelBufferObject->write(colorChannelBuffer.get(), sizeof(ColorChannelBuffer));
+        memcpy(lastUploadedColorChannels.get(), colorChannelBuffer.get(), sizeof(ColorChannelBuffer));
+        colorChannelsUploaded = true;
+    }    PROFILER_POP();
     timer.end();
 }
 
@@ -616,11 +643,10 @@ void Renderer::draw() {
     #ifdef GEODE_ANDROID
     // Every 2 seconds of level time the culling shader counts what happens to the sprites
     i64 bucket = (i64)(gameTimer / 2.0);
-    collectDiagnostics = bucket != diagnosticsBucket;
+    collectDiagnostics = bismuth::debugTools && bucket != diagnosticsBucket;
     diagnosticsBucket = bucket;
     #endif
 
-    u64 prevTime = getTime();
     storeGLStates();
     prepareShaderUniforms();
     if (!isPaused()) {
@@ -652,6 +678,10 @@ void Renderer::draw() {
             logDiagnostics();
         #endif
     }
+
+    // The uniform buffer, draw commands and raw sprites texture that all layers use. Once per frame
+    // here, not once per layer.
+    objectBatch.bindDrawBuffers();
 
     renderingTimer.start();
 
@@ -708,11 +738,14 @@ void Renderer::finish() {
         glGetQueryObjecti64v(timeElapsedQuery, GL_QUERY_RESULT, &renderTime);
     }
 
-    if (debugText->isVisible())
+    if (debugText && debugText->isVisible())
         updateDebugText();
 }
 
 void Renderer::updateDebugText() {
+    if (!debugText)
+        return;
+
     std::string text = "";
 
     text += overdrawView.getDebugText();

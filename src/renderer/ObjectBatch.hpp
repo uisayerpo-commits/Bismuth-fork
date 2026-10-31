@@ -132,11 +132,17 @@ public:
     void readDiagnostics(u32* counters);
 
     /*
-        Binds the texture with the raw sprites to the texture unit the vertex shader reads
-        it from. The shader that is going to draw has to be in use. Does nothing when the
-        raw sprites are in a buffer.
+        Binds what all the draw calls of a frame share (the game state uniform buffer, the draw
+        commands and the raw sprite texture), once per frame instead of once per layer.
     */
-    void bindRawSpriteTexture(Shader* shader);
+    void bindDrawBuffers();
+
+    /*
+        False when the layer has nothing to draw in this pass (blending or not) right now. That is
+        known without asking the GPU: it depends on which color channels of the layer are blending.
+        The draw call can be skipped completely then.
+    */
+    bool isLayerVisible(const LayerKey& layer) const;
 
     void draw(const LayerKey& layer);
 
@@ -165,6 +171,7 @@ private:
     void prepareVAO();
 
     void destroyBuffers();
+    void updateLayerMasks();
 
 private:
     Renderer& renderer;
@@ -211,6 +218,11 @@ private:
 
     // All the sprites of an object are written after each other, so
     // the lookups that only depend on the object can be remembered.
+    // For every layer: bit 0 = the normal pass has sprites that can be drawn, bit 1 = the additive pass
+    std::vector<u8> layerDrawMasks;
+    u32 lastBlendingBits[35] = {};
+    bool layerMasksValid = false;
+
     GameObject* srbIndexObject = nullptr;
     u32 srbIndexOfObject = 0;
 

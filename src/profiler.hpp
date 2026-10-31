@@ -1,7 +1,10 @@
 #include <Geode/Geode.hpp>
 #include <Geode/modify/CCTextureAtlas.hpp>
 
+// The profiler is not built on Android, the macros below are empty there
+#ifndef GEODE_ANDROID
 #define PROFILER_ENABLED
+#endif
 
 #ifdef PROFILER_ENABLED
 #define PROFILER_PUSH(S) profiler::functionPush(S)
