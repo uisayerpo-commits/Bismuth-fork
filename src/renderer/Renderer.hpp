@@ -1,5 +1,7 @@
 #pragma once
 
+#include <map>
+
 #include <Geode/binding/GameObject.hpp>
 #include <common.hpp>
 #include "Geode/cocos/sprite_nodes/CCSpriteBatchNode.h"
@@ -31,6 +33,10 @@ private:
     void terminate();
 
     void prepareShaderUniforms();
+
+    // Objects the game creates while the level is running (see Renderer::adoptRuntimeObject)
+    bool showRuntimeObjects = true;
+    std::map<cocos2d::CCSpriteBatchNode*, Ref<cocos2d::CCSpriteBatchNode>> runtimeObjectNodes;
 
     // Logs what the GPU is working with every few seconds (Android port debugging)
     void logDiagnostics();
@@ -154,6 +160,13 @@ public:
      * an unnecessary retain and release.
      */
     static Renderer* get();
+
+    /*
+        Makes an object that the game created after the level loaded visible. It is called from
+        the hooks of GJBaseGameLayer::addObject and PlayLayer::addObject. Does nothing for objects
+        that don't need it.
+    */
+    void adoptRuntimeObject(GameObject* object);
 
 private:
     PlayLayer* layer = nullptr;

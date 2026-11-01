@@ -11,6 +11,14 @@ static bool newPlayLayer = false;
 
 #include <Geode/modify/PlayLayer.hpp>
 class $modify(RendererPlayLayer, PlayLayer) {
+    // Practice mode checkpoints are created while the level runs, see Renderer::adoptRuntimeObject
+    void addObject(GameObject* object) {
+        PlayLayer::addObject(object);
+
+        if (auto renderer = Renderer::get())
+            renderer->adoptRuntimeObject(object);
+    }
+
     void setupHasCompleted() {
         newPlayLayer = true;
         PlayLayer::setupHasCompleted();
@@ -101,6 +109,13 @@ static void removeDecoObjects(CCArray* array) {
 
 #include <Geode/modify/GJBaseGameLayer.hpp>
 class $modify(RendererGJBaseGameLayer, GJBaseGameLayer) {
+    void addObject(GameObject* object) {
+        GJBaseGameLayer::addObject(object);
+
+        if (auto renderer = Renderer::get())
+            renderer->adoptRuntimeObject(object);
+    }
+
     void update(float dt) {
         auto timer = BProfiler::start("GJBaseGameLayer::update");
         GJBaseGameLayer::update(dt);

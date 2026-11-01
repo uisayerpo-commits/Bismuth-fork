@@ -15,6 +15,13 @@
 #define COLOR_CHANNEL_MG      1013
 #define COLOR_CHANNEL_MG2     1014
 
+/*
+    Glow sprites (the ones from the glow sheet) are always drawn additively by the game, whatever
+    the blending of their color channel is. They use this channel for the blending decision. The
+    channel is never used for a color, and the CPU keeps its blending bit set.
+*/
+#define COLOR_CHANNEL_ALWAYS_BLENDING 1100
+
 // One bit per color channel, 1 if the channel is blending (additive) right now
 #define COLOR_CHANNEL_BLENDING_WORDS 35
 

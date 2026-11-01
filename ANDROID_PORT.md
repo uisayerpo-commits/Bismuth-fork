@@ -43,3 +43,12 @@ Everything that is only for debugging is behind the "Enable debug tools" setting
 level starts): all logging (`blog::`), the `[diag]` counters (compiled out of the culling shader when off), the
 debug text and the profiler timers. With it off the mod never logs. Note that this setting also turns off the
 CPU side optimizations (existing behavior, see Renderer::useOptimizations), so measure FPS with it off.
+
+## Visual fixes
+- Glow sprites (glow sheet) are always additive in the game, so they use the always-blending channel
+  (`COLOR_CHANNEL_ALWAYS_BLENDING`). Before, only their color channel decided it, and a dark glow darkened the
+  surroundings instead of adding nothing.
+- Objects the game creates while the level runs (practice mode checkpoints) are moved out of the hidden batch nodes
+  into a visible node next to them (`Renderer::adoptRuntimeObject`, setting "Show objects created while playing").
+- The 47 custom sprite meshes were checked against the UHD sheets: at most ~2% of the alpha of a sprite is outside
+  its mesh (soft edges), so they are not the cause of malformed sprites.

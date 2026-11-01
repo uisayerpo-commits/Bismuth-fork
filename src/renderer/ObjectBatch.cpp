@@ -365,7 +365,9 @@ void ObjectBatch::addSprite(
         .spriteType = (u32)type,
         .indexStart = (u32)indexStart,
         .indexCount = (u32)indexCount,
-        .blendingChannel = (u32)ObjectUtils::getSpriteColorChannel(type, object, sprite)
+        .blendingChannel = type == SpriteType::GLOW
+            ? (u32)COLOR_CHANNEL_ALWAYS_BLENDING
+            : (u32)ObjectUtils::getSpriteColorChannel(type, object, sprite)
     });
 
     if (object != groupIndexObject) {

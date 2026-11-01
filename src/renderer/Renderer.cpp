@@ -72,6 +72,7 @@ bool Renderer::init(PlayLayer* layer, CCArray* levelObjects) {
     glGenQueries(1, &timeElapsedQuery);
 
     ingameEnableDisable = Mod::get()->getSettingValue<bool>("ingame_enable");
+    showRuntimeObjects  = Mod::get()->getSettingValue<bool>("show_runtime_objects");
 
     blog::info("OpenGL Version: {}", (const char*)glGetString(GL_VERSION));
 
@@ -434,6 +435,52 @@ void Renderer::logDiagnostics() {
     );
 }
 
+/*
+    The game's own batch nodes are hidden while the renderer is on (it draws their objects
+    itself, from the list it made when the level loaded). Objects the game creates later,
+    like the practice mode checkpoints, are not in that list, so they would be hidden too.
+    They are moved to a node of their own that is next to the hidden one and is visible.
+*/
+void Renderer::adoptRuntimeObject(GameObject* object) {
+    if (!enabled || !showRuntimeObjects || !object || !layer || !layer->m_batchNodes)
+        return;
+
+    auto parent = typeinfo_cast<CCSpriteBatchNode*>(object->getParent());
+    if (!parent || !parent->getTexture() || !object->getTexture())
+        return;
+
+    // Only the game's own batch nodes are hidden
+    bool isGameBatchNode = false;
+    for (auto node : CCArrayExt<CCNode*>(layer->m_batchNodes)) {
+        if (node == parent) {
+            isGameBatchNode = true;
+            break;
+        }
+    }
+    if (!isGameBatchNode || object->getTexture()->getName() != parent->getTexture()->getName())
+        return;
+
+    auto grandParent = parent->getParent();
+    if (!grandParent)
+        return;
+
+    auto& overlay = runtimeObjectNodes[parent];
+    if (!overlay) {
+        overlay = CCSpriteBatchNode::createWithTexture(parent->getTexture(), 16);
+        if (!overlay) {
+            runtimeObjectNodes.erase(parent);
+            return;
+        }
+        overlay->setBlendFunc(parent->getBlendFunc());
+        grandParent->addChild(overlay, parent->getZOrder());
+    }
+
+    Ref<GameObject> keepAlive = object;
+    int zOrder = object->getZOrder();
+    object->removeFromParentAndCleanup(false);
+    overlay->addChild(object, zOrder);
+}
+
 void Renderer::prepareShaderUniforms() {
     kmMat4 matrixP;
 	kmMat4 matrixMV;
@@ -521,6 +568,7 @@ void Renderer::prepareColorChannelBuffer() {
         if (colorChannelsIsBlending[i])
             colorChannelBuffer->u_channelBlending[i >> 5] |= 1u << (i & 31);
     }
+    colorChannelBuffer->u_channelBlending[COLOR_CHANNEL_ALWAYS_BLENDING >> 5] |= 1u << (COLOR_CHANNEL_ALWAYS_BLENDING & 31);
 
     // Colors only change when a trigger runs or something pulses, most frames nothing did
     if (!lastUploadedColorChannels)

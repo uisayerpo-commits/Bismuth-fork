@@ -36,7 +36,10 @@ void ObjectSpriteSorter::addSprite(
         .zOrder = object->getObjectZOrder(),
         .zLayer = object->getObjectZLayer(),
         .spriteSheet = ObjectUtils::getSpritesheetOfObject(object, type),
-        .colorChannelId = (u16)ObjectUtils::getSpriteColorChannel(type, object, sprite),
+        // Glow sprites are always additive in the game, see COLOR_CHANNEL_ALWAYS_BLENDING
+        .colorChannelId = type == SpriteType::GLOW
+            ? (u16)COLOR_CHANNEL_ALWAYS_BLENDING
+            : (u16)ObjectUtils::getSpriteColorChannel(type, object, sprite),
         .inputSpriteIndex = inputSpriteIndex,
         .vertexCount = vertexCount
     });
