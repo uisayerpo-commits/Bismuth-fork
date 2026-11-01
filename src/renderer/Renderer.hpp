@@ -163,7 +163,7 @@ public:
 
     /*
         Makes an object that the game created after the level loaded visible. It is called from
-        the hooks of GJBaseGameLayer::addObject and PlayLayer::addObject. Does nothing for objects
+        the hook of PlayLayer::addObject. Does nothing for objects
         that don't need it.
     */
     void adoptRuntimeObject(GameObject* object);

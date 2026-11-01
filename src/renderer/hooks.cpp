@@ -109,12 +109,8 @@ static void removeDecoObjects(CCArray* array) {
 
 #include <Geode/modify/GJBaseGameLayer.hpp>
 class $modify(RendererGJBaseGameLayer, GJBaseGameLayer) {
-    void addObject(GameObject* object) {
-        GJBaseGameLayer::addObject(object);
-
-        if (auto renderer = Renderer::get())
-            renderer->adoptRuntimeObject(object);
-    }
+    // GJBaseGameLayer::addObject has no binding on android (only PlayLayer::addObject does),
+    // so runtime objects are adopted in the PlayLayer hook above.
 
     void update(float dt) {
         auto timer = BProfiler::start("GJBaseGameLayer::update");
