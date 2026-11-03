@@ -209,6 +209,18 @@ bool Renderer::init(PlayLayer* layer, CCArray* levelObjects) {
     // Everything that can fail is done, now it is safe to touch the scene
     generateBatchNodes();
 
+    // What was in the level when it loaded, to tell it from what the game makes later
+    initialObjects.clear();
+    initialObjects.reserve(levelObjects->count());
+    for (auto object : CCArrayExt<GameObject*>(levelObjects))
+        initialObjects.insert(object);
+
+    batchChildCounts.clear();
+    if (layer->m_batchNodes) {
+        for (auto node : CCArrayExt<CCNode*>(layer->m_batchNodes))
+            batchChildCounts[node] = node->getChildrenCount();
+    }
+
     // The debug text is only there with the debug tools on, otherwise it would be 3 more nodes to draw
     if (bismuth::debugTools) {
         debugText = CCLabelBMFont::create("", "chatFont.fnt");
@@ -266,22 +278,51 @@ bool Renderer::init(PlayLayer* layer, CCArray* levelObjects) {
 void Renderer::generateBatchNodes() {
     for (const auto& id : objectBatch.getUsedLayerIds()) {
         auto batchNode = ObjectBatchNode::create(id);
-        if (batchNode) {
-            auto node = getSpriteBatchNodeWithLayerId(id);
-            if (!node) {
-                // Sprites can switch between the normal and the additive pass while the level plays,
-                // so the layer needs a node even when the game made none for this blending state
-                auto other = id;
-                other.blending = !id.blending;
-                node = getSpriteBatchNodeWithLayerId(other);
-            }
+        if (!batchNode)
+            continue;
 
-            if (!node)
-                continue;
+        /*
+            Each layer is drawn at the place of the game's own batch node for it, so the layers
+            end up in the same order as in the game. The game numbers its z layers so that the
+            additive layer of a normal layer (odd number) is the next number, so if there is no node
+            for exactly this layer the one of the neighbouring number is tried. The last resort is the
+            node of the other blending state of the same layer.
+        */
+        auto find = [&](i32 zLayer, bool blending) {
+            LayerKey key = id;
+            key.zlayer = (ZLayer)zLayer;
+            key.blending = blending;
+            return getSpriteBatchNodeWithLayerId(key);
+        };
 
-            layer->m_objectLayer->addChild(batchNode, node->getZOrder());
-            batchNodes.push_back(batchNode);
+        i32 z = (i32)id.zlayer;
+        bool odd = (z % 2) != 0;
+
+        const char* how = "the game's node for this layer";
+        auto node = find(z, id.blending);
+
+        if (!node) {
+            how = "the game's node for the neighbouring layer number";
+            if (id.blending && odd)
+                node = find(z + 1, true);
+            else if (!id.blending && !odd)
+                node = find(z - 1, false);
         }
+
+        if (!node) {
+            how = "borrowed from the other blending state";
+            node = find(z, !id.blending);
+        }
+
+        if (!node) {
+            blog::info("[layers] {}: no game batch node found, skipped", id.toString());
+            continue;
+        }
+
+        blog::info("[layers] {}: node z order {} ({})", id.toString(), node->getZOrder(), how);
+
+        layer->m_objectLayer->addChild(batchNode, node->getZOrder());
+        batchNodes.push_back(batchNode);
     }
 }
 
@@ -442,22 +483,16 @@ void Renderer::logDiagnostics() {
     They are moved to a node of their own that is next to the hidden one and is visible.
 */
 void Renderer::adoptRuntimeObject(GameObject* object) {
-    if (!enabled || !showRuntimeObjects || !object || !layer || !layer->m_batchNodes)
+    if (!enabled || !showRuntimeObjects || !object || !layer)
         return;
 
     auto parent = typeinfo_cast<CCSpriteBatchNode*>(object->getParent());
     if (!parent || !parent->getTexture() || !object->getTexture())
         return;
 
-    // Only the game's own batch nodes are hidden
-    bool isGameBatchNode = false;
-    for (auto node : CCArrayExt<CCNode*>(layer->m_batchNodes)) {
-        if (node == parent) {
-            isGameBatchNode = true;
-            break;
-        }
-    }
-    if (!isGameBatchNode || object->getTexture()->getName() != parent->getTexture()->getName())
+    // The game's batch nodes are hidden while the renderer is on. Anything in a node that is visible
+    // (for instance the nodes this function makes) is fine as it is.
+    if (parent->isVisible() || object->getTexture()->getName() != parent->getTexture()->getName())
         return;
 
     auto grandParent = parent->getParent();
@@ -475,10 +510,49 @@ void Renderer::adoptRuntimeObject(GameObject* object) {
         grandParent->addChild(overlay, parent->getZOrder());
     }
 
+    blog::info("[runtime] showing object {} (z order {}) that the game made after the level loaded", object->m_objectID, object->getZOrder());
+
     Ref<GameObject> keepAlive = object;
     int zOrder = object->getZOrder();
     object->removeFromParentAndCleanup(false);
     overlay->addChild(object, zOrder);
+}
+
+/*
+    Looks for objects the game made after the level loaded without depending on which function made
+    them: when the number of children of one of the game's batch nodes changes, the node is checked for
+    objects that were not in the level when it loaded.
+*/
+void Renderer::adoptNewRuntimeObjects() {
+    if (!enabled || !showRuntimeObjects || !layer || !layer->m_batchNodes)
+        return;
+
+    std::vector<GameObject*> found;
+
+    for (auto node : CCArrayExt<CCNode*>(layer->m_batchNodes)) {
+        u32 count = node->getChildrenCount();
+
+        auto known = batchChildCounts.find(node);
+        if (known != batchChildCounts.end() && known->second == count)
+            continue;
+
+        blog::info("[runtime] a game batch node now has {} children (was {})", count, known != batchChildCounts.end() ? (i64)known->second : (i64)-1);
+        batchChildCounts[node] = count;
+
+        auto children = node->getChildren();
+        if (!children)
+            continue;
+
+        for (auto child : CCArrayExt<CCNode*>(children)) {
+            auto object = typeinfo_cast<GameObject*>(child);
+            if (object && !initialObjects.contains(object))
+                found.push_back(object);
+        }
+    }
+
+    // Moved after the loop, moving a child changes the array that was looped over
+    for (auto object : found)
+        adoptRuntimeObject(object);
 }
 
 void Renderer::prepareShaderUniforms() {
@@ -869,6 +943,8 @@ void Renderer::update(float dt) {
     // The debug text is refreshed in finish(), once per drawn frame.
     // The audio scale that used to be calculated here was never used,
     // but it still made a call into FMOD every update.
+
+    adoptNewRuntimeObjects();
 
     auto& gstate = layer->m_gameState;
     cameraCenterPos = ccPointToGLM(gstate.m_cameraPosition2 + CCPoint(layer->m_cameraWidth * 0.5, layer->m_cameraHeight * 0.5));

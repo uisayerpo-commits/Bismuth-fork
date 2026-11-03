@@ -52,3 +52,13 @@ CPU side optimizations (existing behavior, see Renderer::useOptimizations), so m
   into a visible node next to them (`Renderer::adoptRuntimeObject`, setting "Show objects created while playing").
 - The 47 custom sprite meshes were checked against the UHD sheets: at most ~2% of the alpha of a sprite is outside
   its mesh (soft edges), so they are not the cause of malformed sprites.
+
+## Sprite order and layers
+- Sprites inside a layer are sorted with std::stable_sort (the sprites of one object share a z order and must stay in
+  the order they were added in). std::sort left them in a compiler dependent order, which on Android put an object's
+  black underlay over its colors.
+- Layers use the order of the game's batch node for them; if the game has no node for an additive layer the node of
+  the neighbouring layer number is used (the game's additive layer of a normal odd layer is the next number).
+  With the debug tools on, `[layers]` log lines show which node every layer got.
+- Objects created while the level runs (practice checkpoints) are found by watching the child count of the game's
+  hidden batch nodes (`Renderer::adoptNewRuntimeObjects`) and moved to a visible node.

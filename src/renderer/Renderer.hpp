@@ -1,6 +1,7 @@
 #pragma once
 
 #include <map>
+#include <unordered_set>
 
 #include <Geode/binding/GameObject.hpp>
 #include <common.hpp>
@@ -36,6 +37,11 @@ private:
 
     // Objects the game creates while the level is running (see Renderer::adoptRuntimeObject)
     bool showRuntimeObjects = true;
+    // Every object that was in the level when it loaded, anything else in a game batch node was created later
+    std::unordered_set<GameObject*> initialObjects;
+    // How many children each game batch node had the last time they were looked at
+    std::map<cocos2d::CCNode*, u32> batchChildCounts;
+    void adoptNewRuntimeObjects();
     std::map<cocos2d::CCSpriteBatchNode*, Ref<cocos2d::CCSpriteBatchNode>> runtimeObjectNodes;
 
     // Logs what the GPU is working with every few seconds (Android port debugging)

@@ -56,7 +56,14 @@ void ObjectSpriteSorter::sortForCurrentBlendingStates() {
     }
 
     for (auto& [key, layer] : sortedSpriteLayers) {
-        std::sort(layer.begin(), layer.end(), [](const SpriteEntry* a, const SpriteEntry* b) {
+        /*
+            Sprites with the same z order (all the sprites of one object have the same one, the black
+            underlay, the base and the detail) have to stay in the order they were added in, like they do
+            in the game's batch nodes. std::sort doesn't promise that: it keeps the order for short
+            ranges with some compilers and not with others, so on Android an object's black sprite could
+            end up on top of its own colors. stable_sort keeps it.
+        */
+        std::stable_sort(layer.begin(), layer.end(), [](const SpriteEntry* a, const SpriteEntry* b) {
             return a->zOrder < b->zOrder;
         });
     }
