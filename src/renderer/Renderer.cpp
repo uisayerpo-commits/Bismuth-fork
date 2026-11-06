@@ -78,6 +78,9 @@ bool Renderer::init(PlayLayer* layer, CCArray* levelObjects) {
     optMove             = Mod::get()->getSettingValue<bool>("opt_move");
     optDecoRemoval      = Mod::get()->getSettingValue<bool>("opt_deco_removal");
     hideHighDetailInLDM = Mod::get()->getSettingValue<bool>("hide_high_detail_in_ldm");
+    visParticles        = Mod::get()->getSettingValue<bool>("vis_particles");
+    visPreUpdate        = Mod::get()->getSettingValue<bool>("vis_pre_update");
+    visEnterArea        = Mod::get()->getSettingValue<bool>("vis_enter_area");
 
     // "0021" is the game variable of Low Detail Mode
     bool lowDetailMode = GameManager::get()->getGameVariable("0021");

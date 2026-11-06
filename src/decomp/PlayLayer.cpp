@@ -2,6 +2,7 @@
 #include <Geode/Geode.hpp>
 #include <Geode/binding/EffectGameObject.hpp>
 #include "PlayLayer.hpp"
+#include "../renderer/Renderer.hpp"
 
 #include <algorithm>
 
@@ -333,7 +334,15 @@ void decomp_PlayLayer::virtual_updateVisibility(float delta) {
 }
     
 void decomp_PlayLayer::optimized_updateVisibility(float delta) {
-    // preUpdateVisibility(delta);
+    // Bismuth never draws or updates the game's particle systems (fog / smoke use the particle
+    // sheet). The vanilla loop's tail runs updateParticles, skipping it left them uncontrolled.
+    auto renderer = Renderer::get();
+    bool doPre       = renderer && renderer->getVisPreUpdate();
+    bool doParticles = !renderer || renderer->getVisParticles();
+    bool doEnterArea = renderer && renderer->getVisEnterArea();
+
+    if (doPre)
+        preUpdateVisibility(delta);
     m_effectManager->processColors();
     m_effectManager->calculateLightBGColor(m_effectManager->activeColorForIndex(COLOR_P1));
 
@@ -348,4 +357,11 @@ void decomp_PlayLayer::optimized_updateVisibility(float delta) {
 
     m_player1->m_audioScale = audioScale;
     m_player2->m_audioScale = audioScale;
+
+    if (doEnterArea) {
+        updateEnterEffects(delta);
+        processAreaVisualActions(delta);
+    }
+    if (doParticles)
+        updateParticles(delta);
 }

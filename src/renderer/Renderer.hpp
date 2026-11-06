@@ -43,6 +43,10 @@ private:
     bool optMove = true;
     bool optDecoRemoval = true;
     bool hideHighDetailInLDM = true;
+    // Parts of the game's own updateVisibility that the optimized version still runs (see optimized_updateVisibility)
+    bool visParticles = true;
+    bool visPreUpdate = false;
+    bool visEnterArea = false;
     // Every object that was in the level when it loaded, anything else in a game batch node was created later
     std::unordered_set<GameObject*> initialObjects;
     // How many children each game batch node had the last time they were looked at
@@ -153,6 +157,9 @@ public:
     bool useOptimizations();
 
     // Each optimized path, on only while useOptimizations() is on AND its own setting is on
+    inline bool getVisParticles() const { return visParticles; }
+    inline bool getVisPreUpdate() const { return visPreUpdate; }
+    inline bool getVisEnterArea() const { return visEnterArea; }
     inline bool useOptVisibility() { return optVisibility && useOptimizations(); }
     inline bool useOptRotation() { return optRotation && useOptimizations(); }
     inline bool useOptMove() { return optMove && useOptimizations(); }

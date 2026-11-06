@@ -6,7 +6,7 @@
 	},
 	"id": "iliashdz.bismuth",
 	"name": "Bismuth (experimental)",
-	"version": "v0.1.0-alpha.16",
+	"version": "v0.1.0-alpha.17",
 	"developer": "IliasHDZ",
 	"description": "Rendering optimization mod",
 	"dependencies": {
@@ -64,6 +64,24 @@
 			"type": "bool",
 			"default": true,
 			"description": "Like the game, skip objects marked High Detail while Low Detail Mode is on. Takes effect the next time a level is loaded."
+		},
+		"vis_particles": {
+			"name": "Fog fix: update game particles",
+			"type": "bool",
+			"default": true,
+			"description": "Runs the game's particle update that the optimized visibility path used to skip. Next level load."
+		},
+		"vis_pre_update": {
+			"name": "Fog test: run preUpdateVisibility",
+			"type": "bool",
+			"default": false,
+			"description": "Test switch. Also runs the game's pre-visibility step. Next level load."
+		},
+		"vis_enter_area": {
+			"name": "Fog test: run enter and area effect updates",
+			"type": "bool",
+			"default": false,
+			"description": "Test switch. Also runs updateEnterEffects and processAreaVisualActions. Next level load."
 		},
 		"opt_visibility": {
 			"name": "Fog test: skip game visibility update",
