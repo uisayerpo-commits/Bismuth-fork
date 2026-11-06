@@ -73,6 +73,14 @@ bool Renderer::init(PlayLayer* layer, CCArray* levelObjects) {
 
     ingameEnableDisable = Mod::get()->getSettingValue<bool>("ingame_enable");
     showRuntimeObjects  = Mod::get()->getSettingValue<bool>("show_runtime_objects");
+    optVisibility       = Mod::get()->getSettingValue<bool>("opt_visibility");
+    optRotation         = Mod::get()->getSettingValue<bool>("opt_rotation");
+    optMove             = Mod::get()->getSettingValue<bool>("opt_move");
+    optDecoRemoval      = Mod::get()->getSettingValue<bool>("opt_deco_removal");
+    hideHighDetailInLDM = Mod::get()->getSettingValue<bool>("hide_high_detail_in_ldm");
+
+    // "0021" is the game variable of Low Detail Mode
+    bool lowDetailMode = GameManager::get()->getGameVariable("0021");
 
     blog::info("OpenGL Version: {}", (const char*)glGetString(GL_VERSION));
 
@@ -96,6 +104,16 @@ bool Renderer::init(PlayLayer* layer, CCArray* levelObjects) {
     objects.reserve(levelObjects->count());
 
     blog::info("Level contains {} object(s)", levelObjects->count());
+    blog::info("Low Detail Mode: {}", lowDetailMode);
+    {
+        usize highDetail = 0, disabled = 0, groupDisabled = 0;
+        for (auto object : CCArrayExt<GameObject*>(levelObjects)) {
+            if (object->m_isHighDetail) highDetail++;
+            if (object->m_isDisabled || object->m_isDisabled2) disabled++;
+            if (object->m_isGroupDisabled) groupDisabled++;
+        }
+        blog::info("High detail objects: {}, disabled: {}, group disabled: {}", highDetail, disabled, groupDisabled);
+    }
     blog::info("Sorting objects...");
     for (auto object : CCArrayExt<GameObject*>(levelObjects)) {
         if (object == layer->m_anticheatSpike) {
@@ -104,6 +122,10 @@ bool Renderer::init(PlayLayer* layer, CCArray* levelObjects) {
         }
 
         if (object->isTrigger() || object->m_isHide)
+            continue;
+
+        // Low Detail Mode hides high detail objects in the game, so they are not drawn here either
+        if (lowDetailMode && hideHighDetailInLDM && object->m_isHighDetail)
             continue;
 
         DEBUG_LOG("- {}, id: {}", (void*)object, object->m_objectID);
@@ -146,6 +168,12 @@ bool Renderer::init(PlayLayer* layer, CCArray* levelObjects) {
     shaderMacroVariables["GROUP_ID_LIMIT"]     = std::to_string(groupCombCount);
     if (bismuth::debugTools)
         shaderMacroVariables["BISMUTH_DIAGNOSTICS"] = "1"; // see objectCulling.comp
+
+    {
+        // Always written with a '.', the shader language wants a float literal whatever the locale is
+        double glowStrength = std::clamp(Mod::get()->getSettingValue<double>("glow_strength"), 0.0, 1.0);
+        shaderMacroVariables["GLOW_STRENGTH"] = fmt::format("{:.3f}", glowStrength);
+    }
 
     // The shaders are compiled before the vertex data is generated. If the GPU or
     // driver can't handle them there is no reason to do the expensive part.

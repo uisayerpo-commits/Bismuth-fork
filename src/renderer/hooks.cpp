@@ -61,7 +61,7 @@ class $modify(RendererPlayLayer, PlayLayer) {
     void updateVisibility(float dt) {
         auto timer = BProfiler::start("PlayLayer::updateVisibility");
         auto renderer = Renderer::get();
-        if (renderer && renderer->useOptimizations()) {
+        if (renderer && renderer->useOptVisibility()) {
             ((decomp_PlayLayer*)this)->optimized_updateVisibility(dt);
             timer.end();
             return;
@@ -142,7 +142,7 @@ class $modify(RendererGJBaseGameLayer, GJBaseGameLayer) {
             if (objects)
                 moveObjects(objects, node->m_unk038, node->m_unk040, 0);
 
-            if (!renderer->useOptimizations()) {
+            if (!renderer->useOptMove()) {
                 objects = getOptimizedGroup(groupId);
                 if (objects)
                     moveObjects(objects, node->m_unk090, node->m_unk098, 0);
@@ -209,7 +209,7 @@ class $modify(RendererGJBaseGameLayer, GJBaseGameLayer) {
             return;
         }
 
-        if (renderer->useOptimizations())
+        if (renderer->useOptRotation())
             ((decomp_GJBaseGameLayer*)this)->optimized_processRotationActions();
         else
             siphon_processRotationActions();
@@ -254,7 +254,7 @@ class $modify(RendererGJBaseGameLayer, GJBaseGameLayer) {
         GJBaseGameLayer::optimizeMoveGroups();
 
         auto renderer = Renderer::get();
-        if (!renderer || !renderer->useOptimizations())
+        if (!renderer || !renderer->useOptDecoRemoval())
             return;
 
         for (auto array : m_optimizedGroups)

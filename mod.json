@@ -6,7 +6,7 @@
 	},
 	"id": "iliashdz.bismuth",
 	"name": "Bismuth (experimental)",
-	"version": "v0.1.0-alpha.14",
+	"version": "v0.1.0-alpha.16",
 	"developer": "IliasHDZ",
 	"description": "Rendering optimization mod",
 	"dependencies": {
@@ -41,11 +41,53 @@
 			"default": false,
 			"description": "Allows you to enable and disable Bismuth while playing by pressing F8. It also allows you to use Difference Mode by pressing F9 (Difference Mode is very unstable).\n\n WARNING: This option effectively removes any optimization."
 		},
+		"glow_strength": {
+			"name": "Glow strength",
+			"type": "float",
+			"default": 0.85,
+			"min": 0.0,
+			"max": 1.0,
+			"control": {
+				"slider": true,
+				"input": true
+			},
+			"description": "How strong the glow of objects is drawn. 1 is the full strength, lower values tone it down. Takes effect the next time a level is loaded."
+		},
 		"show_runtime_objects": {
 			"name": "Show objects created while playing",
 			"type": "bool",
 			"default": true,
 			"description": "Practice mode checkpoints (and anything else the game creates after the level loaded) are moved out of the game's hidden batch nodes so they are visible."
+		},
+		"hide_high_detail_in_ldm": {
+			"name": "Hide high detail objects in Low Detail Mode",
+			"type": "bool",
+			"default": true,
+			"description": "Like the game, skip objects marked High Detail while Low Detail Mode is on. Takes effect the next time a level is loaded."
+		},
+		"opt_visibility": {
+			"name": "Fog test: skip game visibility update",
+			"type": "bool",
+			"default": true,
+			"description": "Test switch. Turn OFF to let the game run its own per-object visibility update. Only used while debug tools are off. Next level load."
+		},
+		"opt_rotation": {
+			"name": "Fog test: optimized rotation",
+			"type": "bool",
+			"default": true,
+			"description": "Test switch. Turn OFF to use the slower rotation path. Only used while debug tools are off. Next level load."
+		},
+		"opt_move": {
+			"name": "Fog test: skip CPU move of optimized groups",
+			"type": "bool",
+			"default": true,
+			"description": "Test switch. Turn OFF to let the game also move optimized groups on the CPU. Only used while debug tools are off. Next level load."
+		},
+		"opt_deco_removal": {
+			"name": "Fog test: remove decoration from move groups",
+			"type": "bool",
+			"default": true,
+			"description": "Test switch. Turn OFF to keep decoration objects in the game's move groups. Only used while debug tools are off. Next level load."
 		},
 		"use_mapped_buffers": {
 			"name": "Upload buffers through mapping",

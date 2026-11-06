@@ -37,6 +37,12 @@ private:
 
     // Objects the game creates while the level is running (see Renderer::adoptRuntimeObject)
     bool showRuntimeObjects = true;
+    // Per-path switches for the CPU optimizations (bisect aid, read once at init)
+    bool optVisibility = true;
+    bool optRotation = true;
+    bool optMove = true;
+    bool optDecoRemoval = true;
+    bool hideHighDetailInLDM = true;
     // Every object that was in the level when it loaded, anything else in a game batch node was created later
     std::unordered_set<GameObject*> initialObjects;
     // How many children each game batch node had the last time they were looked at
@@ -145,6 +151,12 @@ public:
     }
 
     bool useOptimizations();
+
+    // Each optimized path, on only while useOptimizations() is on AND its own setting is on
+    inline bool useOptVisibility() { return optVisibility && useOptimizations(); }
+    inline bool useOptRotation() { return optRotation && useOptimizations(); }
+    inline bool useOptMove() { return optMove && useOptimizations(); }
+    inline bool useOptDecoRemoval() { return optDecoRemoval && useOptimizations(); }
 
     void setEnabled(bool enabled);
 

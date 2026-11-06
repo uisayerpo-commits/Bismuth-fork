@@ -90,6 +90,10 @@ void collectAlphaDiagnostics(uint colorChannel, float channelAlpha, float groupO
 }
 #endif
 
+#ifndef GLOW_STRENGTH
+#define GLOW_STRENGTH 1.0
+#endif
+
 //// RAW SPRITE OUTPUT ////
 #ifdef RAW_SPRITES_IN_TEXTURE
 layout (rgba32f, binding = 0) writeonly uniform highp image2D u_rawSpriteImage;
@@ -196,6 +200,11 @@ void processSprite(uint spriteIndex) {
     #endif
 
     color.a *= state.opacity * object.opacity;
+
+    // The "Glow strength" setting
+    if (spriteType == SPRITE_TYPE_GLOW)
+        color.a *= GLOW_STRENGTH;
+
     color.rgb *= color.a;
 
     #ifdef BISMUTH_DIAGNOSTICS
