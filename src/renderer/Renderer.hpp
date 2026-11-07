@@ -169,6 +169,7 @@ public:
     inline void perfAddNode(double ms) { perfNodeFrameMs += ms; perfNodeDraws++; }
     // CPU time of the game's own update and of the whole director loop (see the hooks)
     inline void perfAddUpdate(double ms) { perfUpdateSum += ms; perfUpdateMax = std::max(perfUpdateMax, ms); perfUpdateCount++; }
+    inline void perfAddHook(int slot, double ms) { perfHookSum[slot] += ms; }
     inline void perfAddLoop(double ms) { perfLoopSum += ms; perfLoopMax = std::max(perfLoopMax, ms); perfLoopCount++; }
 
     // Each optimized path, on only while useOptimizations() is on AND its own setting is on
@@ -254,6 +255,7 @@ private:
     double perfNodeFrameMs = 0.0;
     u32 perfNodeDraws = 0;
     u32 perfCount = 0;
+    double perfHookSum[5] = {};
     double perfUpdateSum = 0.0, perfUpdateMax = 0.0;
     double perfLoopSum = 0.0, perfLoopMax = 0.0;
     u32 perfUpdateCount = 0, perfLoopCount = 0;

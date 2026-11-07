@@ -6,6 +6,23 @@
 
 using namespace geode::prelude;
 
+// Adds the time spent in a hooked function to the [perf] log (debug tools only)
+struct PerfScope {
+    Renderer* renderer;
+    int slot;
+    double start;
+
+    PerfScope(int slot)
+        : renderer(bismuth::debugTools ? Renderer::get() : nullptr)
+        , slot(slot)
+        , start(renderer ? Renderer::perfNow() : 0.0) {}
+
+    ~PerfScope() {
+        if (renderer)
+            renderer->perfAddHook(slot, Renderer::perfNow() - start);
+    }
+};
+
 static bool newPlayLayer = false;
 // static CCArray* allGameObjects = nullptr;
 
@@ -81,6 +98,7 @@ class $modify(RendererPlayLayer, PlayLayer) {
     }
 
     void updateVisibility(float dt) {
+        PerfScope perfScope(0);
         auto timer = BProfiler::start("PlayLayer::updateVisibility");
         auto renderer = Renderer::get();
         if (renderer && renderer->useOptVisibility()) {
@@ -146,11 +164,14 @@ class $modify(RendererGJBaseGameLayer, GJBaseGameLayer) {
         if (perf)
             renderer->perfAddUpdate(Renderer::perfNow() - perfStart);
 
-        if (renderer)
+        if (renderer) {
+            PerfScope perfScope(4);
             renderer->update(dt);
+        }
     }
 
     void processMoveActions() {
+        PerfScope perfScope(1);
         auto renderer = Renderer::get();
         if (renderer == nullptr) {
             GJBaseGameLayer::processMoveActions();
@@ -322,6 +343,7 @@ class $modify(RendererGJBaseGameLayer, GJBaseGameLayer) {
     }
 
     void processTransformActions(bool visibleFrame) {
+        PerfScope perfScope(3);
         auto renderer = Renderer::get();
         if (renderer && renderer->getScaleTriggers())
             applyTransformCommandsToGroups(renderer->getGroupManager());
@@ -330,6 +352,7 @@ class $modify(RendererGJBaseGameLayer, GJBaseGameLayer) {
     }
 
     void processRotationActions() {
+        PerfScope perfScope(2);
         auto renderer = Renderer::get();
         if (renderer == nullptr) {
             GJBaseGameLayer::processRotationActions();

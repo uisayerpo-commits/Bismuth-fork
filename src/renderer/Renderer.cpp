@@ -946,6 +946,7 @@ void Renderer::perfBeginFrame(double now) {
         perfUpdateSum = perfUpdateMax = 0.0;
         perfLoopSum = perfLoopMax = 0.0;
         perfUpdateCount = perfLoopCount = 0;
+        for (int i = 0; i < 5; i++) perfHookSum[i] = 0.0;
         perfWindowStart = now;
     }
 }
@@ -979,14 +980,14 @@ void Renderer::perfLog(double windowMs) {
     double c = (double)perfCount;
 
     blog::info(
-        "[perf] {} frames, {:.1f} fps | frame ms: avg {:.2f} p50 {:.2f} p95 {:.2f} p99 {:.2f} max {:.2f} sd {:.2f} | cpu ms avg(max): draw {:.2f}({:.2f}) fetch {:.2f}({:.2f}) prep {:.2f}({:.2f}) predraw {:.2f}({:.2f}) layers {:.2f}({:.2f}) in {:.0f} draws/frame | game update {:.2f}({:.2f}) director loop {:.2f}({:.2f})",
+        "[perf] {} frames, {:.1f} fps | frame ms: avg {:.2f} p50 {:.2f} p95 {:.2f} p99 {:.2f} max {:.2f} sd {:.2f} | cpu ms avg(max): draw {:.2f}({:.2f}) fetch {:.2f}({:.2f}) prep {:.2f}({:.2f}) predraw {:.2f}({:.2f}) layers {:.2f}({:.2f}) in {:.0f} draws/frame | game update {:.2f}({:.2f}) | per frame inside update: visibility {:.2f} move {:.2f} rotation {:.2f} transform {:.2f} renderer.update {:.2f}",
         n, (double)n * 1000.0 / windowMs,
         avg, pct(0.5), pct(0.95), pct(0.99), (double)sorted.back(), sd,
         perfSum[0] / c, perfMax[0], perfSum[1] / c, perfMax[1], perfSum[2] / c, perfMax[2],
         perfSum[3] / c, perfMax[3], perfSum[4] / c, perfMax[4],
         (double)perfNodeDraws / c,
         perfUpdateCount ? perfUpdateSum / (double)perfUpdateCount : 0.0, perfUpdateMax,
-        perfLoopCount ? perfLoopSum / (double)perfLoopCount : 0.0, perfLoopMax
+        perfHookSum[0] / (double)n, perfHookSum[1] / (double)n, perfHookSum[2] / (double)n, perfHookSum[3] / (double)n, perfHookSum[4] / (double)n
     );
 }
 
