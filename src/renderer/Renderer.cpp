@@ -82,6 +82,7 @@ bool Renderer::init(PlayLayer* layer, CCArray* levelObjects) {
     optDecoRemoval      = Mod::get()->getSettingValue<bool>("opt_deco_removal");
     hideHighDetailInLDM = Mod::get()->getSettingValue<bool>("hide_high_detail_in_ldm");
     visParticles        = Mod::get()->getSettingValue<bool>("vis_particles");
+    particleUpdateHz    = (int)Mod::get()->getSettingValue<int64_t>("particle_update_hz");
     scaleTriggers       = Mod::get()->getSettingValue<bool>("scale_triggers");
     visPreUpdate        = Mod::get()->getSettingValue<bool>("vis_pre_update");
     visEnterArea        = Mod::get()->getSettingValue<bool>("vis_enter_area");
@@ -946,7 +947,7 @@ void Renderer::perfBeginFrame(double now) {
         perfUpdateSum = perfUpdateMax = 0.0;
         perfLoopSum = perfLoopMax = 0.0;
         perfUpdateCount = perfLoopCount = 0;
-        for (int i = 0; i < 5; i++) perfHookSum[i] = 0.0;
+        for (int i = 0; i < 8; i++) perfHookSum[i] = 0.0;
         perfWindowStart = now;
     }
 }
@@ -980,14 +981,15 @@ void Renderer::perfLog(double windowMs) {
     double c = (double)perfCount;
 
     blog::info(
-        "[perf] {} frames, {:.1f} fps | frame ms: avg {:.2f} p50 {:.2f} p95 {:.2f} p99 {:.2f} max {:.2f} sd {:.2f} | cpu ms avg(max): draw {:.2f}({:.2f}) fetch {:.2f}({:.2f}) prep {:.2f}({:.2f}) predraw {:.2f}({:.2f}) layers {:.2f}({:.2f}) in {:.0f} draws/frame | game update {:.2f}({:.2f}) | per frame inside update: visibility {:.2f} move {:.2f} rotation {:.2f} transform {:.2f} renderer.update {:.2f}",
+        "[perf] {} frames, {:.1f} fps | frame ms: avg {:.2f} p50 {:.2f} p95 {:.2f} p99 {:.2f} max {:.2f} sd {:.2f} | cpu ms avg(max): draw {:.2f}({:.2f}) fetch {:.2f}({:.2f}) prep {:.2f}({:.2f}) predraw {:.2f}({:.2f}) layers {:.2f}({:.2f}) in {:.0f} draws/frame | game update {:.2f}({:.2f}) | per frame inside update: visibility {:.2f} move {:.2f} rotation {:.2f} transform {:.2f} renderer.update {:.2f} | inside visibility: colors {:.2f} particles {:.2f}",
         n, (double)n * 1000.0 / windowMs,
         avg, pct(0.5), pct(0.95), pct(0.99), (double)sorted.back(), sd,
         perfSum[0] / c, perfMax[0], perfSum[1] / c, perfMax[1], perfSum[2] / c, perfMax[2],
         perfSum[3] / c, perfMax[3], perfSum[4] / c, perfMax[4],
         (double)perfNodeDraws / c,
         perfUpdateCount ? perfUpdateSum / (double)perfUpdateCount : 0.0, perfUpdateMax,
-        perfHookSum[0] / (double)n, perfHookSum[1] / (double)n, perfHookSum[2] / (double)n, perfHookSum[3] / (double)n, perfHookSum[4] / (double)n
+        perfHookSum[0] / (double)n, perfHookSum[1] / (double)n, perfHookSum[2] / (double)n, perfHookSum[3] / (double)n, perfHookSum[4] / (double)n,
+        perfHookSum[5] / (double)n, perfHookSum[6] / (double)n
     );
 }
 

@@ -47,6 +47,7 @@ private:
     bool hideHighDetailInLDM = true;
     // Parts of the game's own updateVisibility that the optimized version still runs (see optimized_updateVisibility)
     bool visParticles = true;
+    int particleUpdateHz = 30;
     bool scaleTriggers = true;
     bool visPreUpdate = false;
     bool visEnterArea = false;
@@ -175,6 +176,9 @@ public:
     // Each optimized path, on only while useOptimizations() is on AND its own setting is on
     inline bool getScaleTriggers() const { return scaleTriggers; }
     inline bool getVisParticles() const { return visParticles; }
+    inline float getParticleUpdateInterval() const { return particleUpdateHz > 0 ? 1.0f / (float)particleUpdateHz : 0.0f; }
+    // Time of the game's delta that the particle update has not seen yet (it runs at a lower rate)
+    float particleTimeLeft = 0.0f;
     inline bool getVisPreUpdate() const { return visPreUpdate; }
     inline bool getVisEnterArea() const { return visEnterArea; }
     inline bool useOptVisibility() { return optVisibility && useOptimizations(); }
@@ -255,7 +259,7 @@ private:
     double perfNodeFrameMs = 0.0;
     u32 perfNodeDraws = 0;
     u32 perfCount = 0;
-    double perfHookSum[5] = {};
+    double perfHookSum[8] = {};
     double perfUpdateSum = 0.0, perfUpdateMax = 0.0;
     double perfLoopSum = 0.0, perfLoopMax = 0.0;
     u32 perfUpdateCount = 0, perfLoopCount = 0;

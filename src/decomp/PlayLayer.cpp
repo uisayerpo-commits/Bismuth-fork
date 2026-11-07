@@ -343,7 +343,13 @@ void decomp_PlayLayer::optimized_updateVisibility(float delta) {
 
     if (doPre)
         preUpdateVisibility(delta);
+    const bool perf = renderer && bismuth::debugTools;
+
+    double perfStart = perf ? Renderer::perfNow() : 0.0;
     m_effectManager->processColors();
+    if (perf)
+        renderer->perfAddHook(5, Renderer::perfNow() - perfStart);
+
     m_effectManager->calculateLightBGColor(m_effectManager->activeColorForIndex(COLOR_P1));
 
     float audioScale;
@@ -362,6 +368,23 @@ void decomp_PlayLayer::optimized_updateVisibility(float delta) {
         updateEnterEffects(delta);
         processAreaVisualActions(delta);
     }
-    if (doParticles)
-        updateParticles(delta);
+    if (doParticles) {
+        // The particle update only starts and stops systems, it does not need every frame
+        // of a high refresh rate. It gets the time that passed since it last ran.
+        float interval = 0.0f;
+        if (renderer) {
+            renderer->particleTimeLeft += delta;
+            interval = renderer->getParticleUpdateInterval();
+        }
+
+        float timeLeft = renderer ? renderer->particleTimeLeft : delta;
+        if (!renderer || timeLeft >= interval) {
+            double particleStart = perf ? Renderer::perfNow() : 0.0;
+            updateParticles(timeLeft);
+            if (perf)
+                renderer->perfAddHook(6, Renderer::perfNow() - particleStart);
+            if (renderer)
+                renderer->particleTimeLeft = 0.0f;
+        }
+    }
 }
