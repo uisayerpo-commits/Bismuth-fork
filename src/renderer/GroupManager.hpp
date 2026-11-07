@@ -153,6 +153,19 @@ public:
         std::optional<glm::vec2> centerPoint = std::nullopt
     );
 
+    /*
+        Applies the matrix 'linear' to every object of the group, around
+        'centerPoint' (or, without one, around every object's own position).
+        'transformObjects' also applies it to the objects themselves,
+        which a scale trigger with "Only Move" does not want.
+    */
+    void transformGroup(
+        GroupID groupId,
+        const glm::mat2& linear,
+        std::optional<glm::vec2> centerPoint,
+        bool transformObjects
+    );
+
     void toggleGroup(GroupID groupId, bool visible);
 
     //// RESET ////

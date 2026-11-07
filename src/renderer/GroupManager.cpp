@@ -1,4 +1,5 @@
 #include "GroupManager.hpp"
+#include <Geode/binding/TransformTriggerGameObject.hpp>
 #include "Renderer.hpp"
 #include "glm/ext/matrix_transform.hpp"
 #include <Geode/binding/EffectGameObject.hpp>
@@ -16,6 +17,10 @@ using namespace geode::prelude;
 #define FOLLOW_TRIGGER_ID 1347
 
 static std::optional<GroupID> getTargetGroupIdOfTransformingTrigger(GameObject* object) {
+    // Scale / transform triggers
+    if (auto transformTrigger = typeinfo_cast<TransformTriggerGameObject*>(object))
+        return transformTrigger->m_targetGroupID;
+
     switch (object->m_objectID) {
     case MOVE_TRIGGER_ID:
     case ROTATE_TRIGGER_ID:
@@ -287,6 +292,34 @@ void GroupManager::rotateGroup(
         groupState.positionalTransform *= matrix;
         groupState.offset = matrix * (groupState.offset - center) + center;
         
+        haveGroupStatesScaled[combIndex] = true;
+    }
+
+    groupStatesDirty = true;
+}
+
+void GroupManager::transformGroup(
+    GroupID groupId,
+    const glm::mat2& linear,
+    std::optional<glm::vec2> centerPoint,
+    bool transformObjects
+) {
+    if (groupId < 0 || (usize)groupId >= groupCombinationIndiciesPerGroupId.size())
+        return;
+
+    for (auto combIndex : groupCombinationIndiciesPerGroupId[groupId]) {
+        auto& groupState = groupStates[combIndex];
+
+        // The matrix comes last: it acts on whatever the group already went through
+        if (centerPoint.has_value()) {
+            auto center = centerPoint.value();
+            groupState.positionalTransform = linear * groupState.positionalTransform;
+            groupState.offset = linear * (groupState.offset - center) + center;
+        }
+
+        if (transformObjects)
+            groupState.localTransform = linear * groupState.localTransform;
+
         haveGroupStatesScaled[combIndex] = true;
     }
 

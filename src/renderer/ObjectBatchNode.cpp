@@ -29,6 +29,9 @@ void ObjectBatchNode::draw() {
     if (!batch.isLayerVisible(layerId))
         return;
 
+    const bool perf = bismuth::debugTools;
+    double perfStart = perf ? Renderer::perfNow() : 0.0;
+
     PROFILER_PUSH("ObjectBatchNode::draw");
 
     // Saves the state of the game, uses the shader. The sprite sheet and raw sprite texture
@@ -47,5 +50,7 @@ void ObjectBatchNode::draw() {
     batch.draw(layerId);
 
     renderer->finishDraw();
+    if (perf)
+        renderer->perfAddNode(Renderer::perfNow() - perfStart);
     PROFILER_POP();
 }

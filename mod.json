@@ -6,7 +6,7 @@
 	},
 	"id": "iliashdz.bismuth",
 	"name": "Bismuth (experimental)",
-	"version": "v0.1.0-alpha.17",
+	"version": "v0.1.0-alpha.19",
 	"developer": "IliasHDZ",
 	"description": "Rendering optimization mod",
 	"dependencies": {
@@ -64,6 +64,18 @@
 			"type": "bool",
 			"default": true,
 			"description": "Like the game, skip objects marked High Detail while Low Detail Mode is on. Takes effect the next time a level is loaded."
+		},
+		"scale_triggers": {
+			"name": "Scale / transform triggers",
+			"type": "bool",
+			"default": true,
+			"description": "Makes scale and transform triggers (scale, skew, only move, center group) show up in the rendering. Next level load."
+		},
+		"debug_keep_optimizations": {
+			"name": "Keep optimizations with debug tools",
+			"type": "bool",
+			"default": false,
+			"description": "Debug tools normally switch the CPU optimizations off. Turn this on to measure the real thing: the log gets a [perf] line every 2 seconds. Do not use F8 while this is on. Next level load."
 		},
 		"vis_particles": {
 			"name": "Fog fix: update game particles",

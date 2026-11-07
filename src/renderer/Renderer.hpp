@@ -1,6 +1,7 @@
 #pragma once
 
 #include <map>
+#include <vector>
 #include <unordered_set>
 
 #include <Geode/binding/GameObject.hpp>
@@ -45,8 +46,11 @@ private:
     bool hideHighDetailInLDM = true;
     // Parts of the game's own updateVisibility that the optimized version still runs (see optimized_updateVisibility)
     bool visParticles = true;
+    bool scaleTriggers = true;
     bool visPreUpdate = false;
     bool visEnterArea = false;
+    // Debug tools normally switch the CPU optimizations off, this keeps them on
+    bool keepOptimizationsInDebug = false;
     // Every object that was in the level when it loaded, anything else in a game batch node was created later
     std::unordered_set<GameObject*> initialObjects;
     // How many children each game batch node had the last time they were looked at
@@ -156,7 +160,14 @@ public:
 
     bool useOptimizations();
 
+    // Frame time probe, only runs with debug tools on (logs a [perf] line every 2 seconds)
+    static double perfNow();
+    void perfBeginFrame(double now);
+    void perfEndFrame(double fetchMs, double prepMs, double predrawMs, double totalMs);
+    inline void perfAddNode(double ms) { perfNodeFrameMs += ms; perfNodeDraws++; }
+
     // Each optimized path, on only while useOptimizations() is on AND its own setting is on
+    inline bool getScaleTriggers() const { return scaleTriggers; }
     inline bool getVisParticles() const { return visParticles; }
     inline bool getVisPreUpdate() const { return visPreUpdate; }
     inline bool getVisEnterArea() const { return visEnterArea; }
@@ -226,6 +237,17 @@ private:
     std::string lastDebugText;
 
     GPUTimer renderingTimer { "Rendering time" };
+
+    // Frame time probe state
+    void perfLog(double windowMs);
+    double perfLastStart = 0.0;
+    double perfWindowStart = 0.0;
+    double perfNodeFrameMs = 0.0;
+    u32 perfNodeDraws = 0;
+    u32 perfCount = 0;
+    double perfSum[5] = {};
+    double perfMax[5] = {};
+    std::vector<float> perfFrameMs;
 
     GroupManager groupManager;
 

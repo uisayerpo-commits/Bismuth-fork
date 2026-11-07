@@ -1,4 +1,7 @@
 #include "Renderer.hpp"
+#include <chrono>
+#include <algorithm>
+#include <cmath>
 #include "Geode/cocos/CCDirector.h"
 #include "Geode/cocos/kazmath/include/kazmath/mat4.h"
 #include <common.hpp>
@@ -79,8 +82,14 @@ bool Renderer::init(PlayLayer* layer, CCArray* levelObjects) {
     optDecoRemoval      = Mod::get()->getSettingValue<bool>("opt_deco_removal");
     hideHighDetailInLDM = Mod::get()->getSettingValue<bool>("hide_high_detail_in_ldm");
     visParticles        = Mod::get()->getSettingValue<bool>("vis_particles");
+    scaleTriggers       = Mod::get()->getSettingValue<bool>("scale_triggers");
     visPreUpdate        = Mod::get()->getSettingValue<bool>("vis_pre_update");
     visEnterArea        = Mod::get()->getSettingValue<bool>("vis_enter_area");
+    keepOptimizationsInDebug = Mod::get()->getSettingValue<bool>("debug_keep_optimizations");
+    blog::info(
+        "Optimizations active: {} (visibility {}, rotation {}, move {}, deco removal {})",
+        useOptimizations(), useOptVisibility(), useOptRotation(), useOptMove(), useOptDecoRemoval()
+    );
 
     // "0021" is the game variable of Low Detail Mode
     bool lowDetailMode = GameManager::get()->getGameVariable("0021");
@@ -169,7 +178,8 @@ bool Renderer::init(PlayLayer* layer, CCArray* levelObjects) {
 
     shaderMacroVariables["TOTAL_OBJECT_COUNT"] = std::to_string(renderedGameObjectCount == 0 ? 1 : renderedGameObjectCount);
     shaderMacroVariables["GROUP_ID_LIMIT"]     = std::to_string(groupCombCount);
-    if (bismuth::debugTools)
+    // Not in measuring mode (debug tools + keep optimizations): the counters would skew the numbers
+    if (bismuth::debugTools && !keepOptimizationsInDebug)
         shaderMacroVariables["BISMUTH_DIAGNOSTICS"] = "1"; // see objectCulling.comp
 
     {
@@ -253,7 +263,7 @@ bool Renderer::init(PlayLayer* layer, CCArray* levelObjects) {
     }
 
     // The debug text is only there with the debug tools on, otherwise it would be 3 more nodes to draw
-    if (bismuth::debugTools) {
+    if (bismuth::debugTools && !keepOptimizationsInDebug) {
         debugText = CCLabelBMFont::create("", "chatFont.fnt");
         debugTextOutline1 = CCLabelBMFont::create("", "chatFont.fnt");
         debugTextOutline2 = CCLabelBMFont::create("", "chatFont.fnt");
@@ -786,17 +796,26 @@ float CAMERA_CULL_RECT_SCALE = 1.3;
 
 void Renderer::draw() {
     PROFILER_PUSH("Renderer::draw");
+
+    const bool perf = bismuth::debugTools;
+    double perfStart = 0.0, perfFetchEnd = 0.0, perfPrepEnd = 0.0, perfPredrawStart = 0.0, perfPredrawEnd = 0.0;
+    if (perf) {
+        perfStart = perfNow();
+        perfBeginFrame(perfStart);
+    }
     
     if (debugTextEnabled) {
         glBeginQuery(GL_TIME_ELAPSED, timeElapsedQuery);
     }
 
     fetchBlendingStates();
+    if (perf)
+        perfFetchEnd = perfNow();
 
     #ifdef GEODE_ANDROID
     // Every 2 seconds of level time the culling shader counts what happens to the sprites
     i64 bucket = (i64)(gameTimer / 2.0);
-    collectDiagnostics = bismuth::debugTools && bucket != diagnosticsBucket;
+    collectDiagnostics = bismuth::debugTools && !keepOptimizationsInDebug && bucket != diagnosticsBucket;
     diagnosticsBucket = bucket;
     #endif
 
@@ -808,6 +827,8 @@ void Renderer::draw() {
         // auto timer = BProfiler::start("Generate group state buffer");
         groupManager.prepareGroupStateBuffer();
         // timer.end();
+        if (perf)
+            perfPrepEnd = perfNow();
 
         // glm::vec2 bl = view.bottomLeft;
         // glm::vec2 br = view.bottomLeft + view.rightVector;
@@ -824,7 +845,11 @@ void Renderer::draw() {
             objectBatch.resetDiagnostics();
         #endif
 
+        if (perf)
+            perfPredrawStart = perfNow();
         objectBatch.predraw();
+        if (perf)
+            perfPredrawEnd = perfNow();
 
         #ifdef GEODE_ANDROID
         if (collectDiagnostics)
@@ -879,7 +904,85 @@ void Renderer::draw() {
 
     restoreGLStates();
 
+    if (perf) {
+        double perfEnd = perfNow();
+        double prepMs    = perfPrepEnd > 0.0 ? perfPrepEnd - perfFetchEnd : 0.0;
+        double predrawMs = perfPredrawEnd > 0.0 ? perfPredrawEnd - perfPredrawStart : 0.0;
+        perfEndFrame(perfFetchEnd - perfStart, prepMs, predrawMs, perfEnd - perfStart);
+    }
+
     PROFILER_POP();
+}
+
+double Renderer::perfNow() {
+    return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+void Renderer::perfBeginFrame(double now) {
+    if (perfLastStart > 0.0) {
+        double interval = now - perfLastStart;
+        if (interval < 1000.0 && !isPaused())
+            perfFrameMs.push_back((float)interval);
+
+        // The layer draws of the previous frame ran after its draw() returned
+        perfSum[4] += perfNodeFrameMs;
+        perfMax[4] = std::max(perfMax[4], perfNodeFrameMs);
+    }
+    perfNodeFrameMs = 0.0;
+    perfLastStart = now;
+
+    if (perfWindowStart == 0.0)
+        perfWindowStart = now;
+
+    if (now - perfWindowStart >= 2000.0) {
+        perfLog(now - perfWindowStart);
+        perfFrameMs.clear();
+        for (int i = 0; i < 5; i++) {
+            perfSum[i] = 0.0;
+            perfMax[i] = 0.0;
+        }
+        perfCount = 0;
+        perfNodeDraws = 0;
+        perfWindowStart = now;
+    }
+}
+
+void Renderer::perfEndFrame(double fetchMs, double prepMs, double predrawMs, double totalMs) {
+    double values[4] = { totalMs, fetchMs, prepMs, predrawMs };
+    for (int i = 0; i < 4; i++) {
+        perfSum[i] += values[i];
+        perfMax[i] = std::max(perfMax[i], values[i]);
+    }
+    perfCount++;
+}
+
+void Renderer::perfLog(double windowMs) {
+    usize n = perfFrameMs.size();
+    if (n < 5 || perfCount == 0)
+        return;
+
+    std::vector<float> sorted = perfFrameMs;
+    std::sort(sorted.begin(), sorted.end());
+
+    double sum = 0.0;
+    for (float v : sorted) sum += v;
+    double avg = sum / (double)n;
+
+    double variance = 0.0;
+    for (float v : sorted) variance += (v - avg) * (v - avg);
+    double sd = std::sqrt(variance / (double)n);
+
+    auto pct = [&](double p) { return (double)sorted[std::min(n - 1, (usize)(p * (double)n))]; };
+    double c = (double)perfCount;
+
+    blog::info(
+        "[perf] {} frames, {:.1f} fps | frame ms: avg {:.2f} p50 {:.2f} p95 {:.2f} p99 {:.2f} max {:.2f} sd {:.2f} | cpu ms avg(max): draw {:.2f}({:.2f}) fetch {:.2f}({:.2f}) prep {:.2f}({:.2f}) predraw {:.2f}({:.2f}) layers {:.2f}({:.2f}) in {:.0f} draws/frame",
+        n, (double)n * 1000.0 / windowMs,
+        avg, pct(0.5), pct(0.95), pct(0.99), (double)sorted.back(), sd,
+        perfSum[0] / c, perfMax[0], perfSum[1] / c, perfMax[1], perfSum[2] / c, perfMax[2],
+        perfSum[3] / c, perfMax[3], perfSum[4] / c, perfMax[4],
+        (double)perfNodeDraws / c
+    );
 }
 
 void Renderer::finish() {
@@ -1007,7 +1110,7 @@ Renderer* Renderer::get() {
 }
 
 bool Renderer::useOptimizations() {
-    if (canEnableDisableIngame())
+    if (canEnableDisableIngame() && !keepOptimizationsInDebug)
         return false;
 
     return true;

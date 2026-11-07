@@ -202,6 +202,105 @@ class $modify(RendererGJBaseGameLayer, GJBaseGameLayer) {
         GJBaseGameLayer::processRotationActions();
     }
 
+    // Scale / transform triggers. The game goes through the active commands and changes
+    // every object of the target group on the CPU. Here the same math is applied to the
+    // group state instead, the game still runs its own version for the collision.
+    void applyTransformCommandsToGroups(GroupManager& groupManager) {
+        // The active transform commands, a vector of pointers in the effect manager
+        // (offset from the decompiled processTransformActions, GD 2.2081 android64)
+        auto base = reinterpret_cast<char*>(m_effectManager) + 0x670;
+        auto begin = *reinterpret_cast<GroupCommandObject2***>(base);
+        auto end = *reinterpret_cast<GroupCommandObject2***>(base + 8);
+        if (begin == nullptr || end <= begin || (end - begin) > 100000)
+            return;
+
+        auto rotation = [](float degrees) {
+            float radians = -glm::radians(degrees);
+            float c = cosf(radians), s = sinf(radians);
+            return glm::mat2(c, s, -s, c);
+        };
+        auto scale = [](double x, double y) {
+            return glm::mat2((float)x, 0.f, 0.f, (float)y);
+        };
+        auto skew = [](double skewXDegrees, double skewYDegrees) {
+            return glm::mat2(1.f, tanf(glm::radians((float)skewYDegrees)), tanf(glm::radians((float)skewXDegrees)), 1.f);
+        };
+        auto keepAwayFromZero = [](double v) {
+            const double epsilon = 0.0001;
+            if (fabs(v) < epsilon)
+                return v < 0.0 ? -epsilon : epsilon;
+            return v;
+        };
+
+        for (auto it = begin; it != end; ++it) {
+            GroupCommandObject2* gco = *it;
+            if (gco == nullptr)
+                continue;
+
+            int targetId = gco->m_targetGroupID;
+            int centerId = gco->m_centerGroupID;
+
+            CCArray* staticGroup = getStaticGroup(targetId);
+            bool hasStaticObjects = staticGroup && staticGroup->count() != 0;
+
+            double current = hasStaticObjects ? gco->m_someInterpValue1RelatedOne : gco->m_someInterpValue2RelatedOne;
+            double previous = hasStaticObjects ? gco->m_someInterpValue1RelatedZero : gco->m_someInterpValue2RelatedZero;
+
+            if (!gco->m_finishRelated && current == previous)
+                continue;
+
+            double targetX = gco->m_targetScaleX - 1.0;
+            double targetY = gco->m_targetScaleY - 1.0;
+
+            double newX = targetX * current + 1.0;
+            double newY = targetY * current + 1.0;
+            double oldX, oldY;
+            if (gco->m_someInterpValue1Related == 0.0) {
+                oldX = targetX * previous + 1.0;
+                oldY = targetY * previous + 1.0;
+            } else {
+                oldX = gco->m_someInterpValue1Related;
+                oldY = gco->m_someInterpValue2Related;
+            }
+
+            oldX = keepAwayFromZero(oldX);
+            newX = keepAwayFromZero(newX);
+            oldY = keepAwayFromZero(oldY);
+            newY = keepAwayFromZero(newY);
+
+            GameObject* centerObject = tryGetMainObject(centerId);
+
+            if (centerObject == nullptr) {
+                // No center: the objects only scale where they are
+                if (!gco->m_onlyMove)
+                    groupManager.transformGroup(targetId, scale(newX / oldX, newY / oldY), std::nullopt, true);
+                continue;
+            }
+
+            float centerRotation = gco->m_relativeRotation ? centerObject->getRotation() : 0.f;
+
+            // Skewing, scaling and rotating around the center, in the same order as the game's nodes
+            glm::mat2 linear =
+                rotation(centerRotation)
+                * scale(newX, newY)
+                * skew(current * gco->m_transformTriggerProperty450, current * gco->m_transformTriggerProperty451)
+                * skew(-previous * gco->m_transformTriggerProperty450, -previous * gco->m_transformTriggerProperty451)
+                * scale(1.0 / oldX, 1.0 / oldY)
+                * rotation(-centerRotation);
+
+            auto center = ccPointToGLM(centerObject->getUnmodifiedPosition());
+            groupManager.transformGroup(targetId, linear, center, !gco->m_onlyMove);
+        }
+    }
+
+    void processTransformActions(bool visibleFrame) {
+        auto renderer = Renderer::get();
+        if (renderer && renderer->getScaleTriggers())
+            applyTransformCommandsToGroups(renderer->getGroupManager());
+
+        GJBaseGameLayer::processTransformActions(visibleFrame);
+    }
+
     void processRotationActions() {
         auto renderer = Renderer::get();
         if (renderer == nullptr) {
