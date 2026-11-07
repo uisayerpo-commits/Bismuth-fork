@@ -1,5 +1,7 @@
 #include "Renderer.hpp"
+#include <Geode/binding/EffectGameObject.hpp>
 #include <chrono>
+#include <set>
 #include <algorithm>
 #include <cmath>
 #include "Geode/cocos/CCDirector.h"
@@ -92,8 +94,8 @@ bool Renderer::init(PlayLayer* layer, CCArray* levelObjects) {
         useOptimizations(), useOptVisibility(), useOptRotation(), useOptMove(), useOptDecoRemoval()
     );
 
-    // "0021" is the game variable of Low Detail Mode
-    bool lowDetailMode = GameManager::get()->getGameVariable("0021");
+    // The game keeps Low Detail Mode on the layer
+    bool lowDetailMode = layer->m_lowDetailMode;
 
     blog::info("OpenGL Version: {}", (const char*)glGetString(GL_VERSION));
 
@@ -126,6 +128,32 @@ bool Renderer::init(PlayLayer* layer, CCArray* levelObjects) {
             if (object->m_isGroupDisabled) groupDisabled++;
         }
         blog::info("High detail objects: {}, disabled: {}, group disabled: {}", highDetail, disabled, groupDisabled);
+    }
+    {
+        // Area effect triggers (ids 3006 to 3010) are not supported yet, this shows what a level asks of them
+        usize areaCounts[5] = {};
+        std::vector<std::string> areaLines;
+        for (auto object : CCArrayExt<GameObject*>(levelObjects)) {
+            int id = object->m_objectID;
+            if (id < 3006 || id > 3010)
+                continue;
+
+            areaCounts[id - 3006]++;
+            auto effect = typeinfo_cast<EffectGameObject*>(object);
+            if (effect && areaLines.size() < 24) {
+                auto group = layer->getGroup(effect->m_targetGroupID);
+                areaLines.push_back(fmt::format(
+                    "trigger id {} targets group {} ({} objects), center group {}",
+                    id, (int)effect->m_targetGroupID, group ? (int)group->count() : 0, (int)effect->m_centerGroupID
+                ));
+            }
+        }
+        blog::info(
+            "[area] triggers by id: 3006 {}, 3007 {}, 3008 {}, 3009 {}, 3010 {}",
+            areaCounts[0], areaCounts[1], areaCounts[2], areaCounts[3], areaCounts[4]
+        );
+        for (auto& line : areaLines)
+            blog::info("[area] {}", line);
     }
     blog::info("Sorting objects...");
     for (auto object : CCArrayExt<GameObject*>(levelObjects)) {

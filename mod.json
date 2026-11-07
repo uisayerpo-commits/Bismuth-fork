@@ -6,7 +6,7 @@
 	},
 	"id": "iliashdz.bismuth",
 	"name": "Bismuth (experimental)",
-	"version": "v0.1.0-alpha.23",
+	"version": "v0.1.0-alpha.27",
 	"developer": "IliasHDZ",
 	"description": "Rendering optimization mod",
 	"dependencies": {
@@ -80,14 +80,14 @@
 		"particle_update_hz": {
 			"name": "Particle update rate",
 			"type": "int",
-			"default": 30,
+			"default": 0,
 			"min": 0,
 			"max": 240,
 			"control": {
 				"slider": true,
 				"input": true
 			},
-			"description": "How many times per second the game's particle update (needed for fog and smoke) runs. 0 runs it every frame. Lower values save CPU time. Takes effect the next time a level is loaded."
+			"description": "How many times per second the game's particle update (needed for fog and smoke) runs. 0 runs it every frame, which is what the fog needs to look right. Takes effect the next time a level is loaded."
 		},
 		"vis_particles": {
 			"name": "Fog fix: update game particles",

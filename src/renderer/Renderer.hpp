@@ -47,7 +47,7 @@ private:
     bool hideHighDetailInLDM = true;
     // Parts of the game's own updateVisibility that the optimized version still runs (see optimized_updateVisibility)
     bool visParticles = true;
-    int particleUpdateHz = 30;
+    int particleUpdateHz = 0;
     bool scaleTriggers = true;
     bool visPreUpdate = false;
     bool visEnterArea = false;
