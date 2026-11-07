@@ -1,6 +1,7 @@
 #pragma once
 
 #include <map>
+#include <algorithm>
 #include <vector>
 #include <unordered_set>
 
@@ -166,6 +167,9 @@ public:
     void perfBeginFrame(double now);
     void perfEndFrame(double fetchMs, double prepMs, double predrawMs, double totalMs);
     inline void perfAddNode(double ms) { perfNodeFrameMs += ms; perfNodeDraws++; }
+    // CPU time of the game's own update and of the whole director loop (see the hooks)
+    inline void perfAddUpdate(double ms) { perfUpdateSum += ms; perfUpdateMax = std::max(perfUpdateMax, ms); perfUpdateCount++; }
+    inline void perfAddLoop(double ms) { perfLoopSum += ms; perfLoopMax = std::max(perfLoopMax, ms); perfLoopCount++; }
 
     // Each optimized path, on only while useOptimizations() is on AND its own setting is on
     inline bool getScaleTriggers() const { return scaleTriggers; }
@@ -250,6 +254,9 @@ private:
     double perfNodeFrameMs = 0.0;
     u32 perfNodeDraws = 0;
     u32 perfCount = 0;
+    double perfUpdateSum = 0.0, perfUpdateMax = 0.0;
+    double perfLoopSum = 0.0, perfLoopMax = 0.0;
+    u32 perfUpdateCount = 0, perfLoopCount = 0;
     double perfSum[5] = {};
     double perfMax[5] = {};
     std::vector<float> perfFrameMs;

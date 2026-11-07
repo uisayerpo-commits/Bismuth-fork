@@ -135,11 +135,17 @@ class $modify(RendererGJBaseGameLayer, GJBaseGameLayer) {
     // so runtime objects are adopted in the PlayLayer hook above.
 
     void update(float dt) {
+        auto renderer = Renderer::get();
+        const bool perf = renderer && bismuth::debugTools;
+        double perfStart = perf ? Renderer::perfNow() : 0.0;
+
         auto timer = BProfiler::start("GJBaseGameLayer::update");
         GJBaseGameLayer::update(dt);
         timer.end();
 
-        auto renderer = Renderer::get();
+        if (perf)
+            renderer->perfAddUpdate(Renderer::perfNow() - perfStart);
+
         if (renderer)
             renderer->update(dt);
     }
@@ -395,9 +401,15 @@ class $modify(RendererCCDisplayLinkDirector, CCDisplayLinkDirector) {
             return;
         }
 
+        const bool perf = bismuth::debugTools;
+        double perfStart = perf ? Renderer::perfNow() : 0.0;
+
         auto timer = BProfiler::start("Frame time");
         CCDisplayLinkDirector::mainLoop();
         timer.end();
+
+        if (perf)
+            ren->perfAddLoop(Renderer::perfNow() - perfStart);
 
         BProfiler::frameEnd();
     }
