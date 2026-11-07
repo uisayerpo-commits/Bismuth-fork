@@ -51,11 +51,33 @@ class $modify(RendererPlayLayer, PlayLayer) {
             // allGameObjects->removeAllObjects();
         }
 
-        PlayLayer::resetLevel();
-
+        // Reset first. What the game does while it resets the level (starting from a start
+        // position, loading a checkpoint) has to stay, it used to be wiped by a reset after it.
         auto renderer = Renderer::get();
         if (renderer)
             renderer->reset();
+
+        PlayLayer::resetLevel();
+    }
+
+    // Practice mode: the game brings back the objects of a checkpoint by itself, the
+    // group states live in the renderer so they get saved and restored with it
+    CheckpointObject* createCheckpoint() {
+        auto checkpoint = PlayLayer::createCheckpoint();
+
+        auto renderer = Renderer::get();
+        if (checkpoint && renderer)
+            renderer->snapshotGroupStates(checkpoint, m_checkpointArray);
+
+        return checkpoint;
+    }
+
+    void loadFromCheckpoint(CheckpointObject* checkpoint) {
+        PlayLayer::loadFromCheckpoint(checkpoint);
+
+        auto renderer = Renderer::get();
+        if (checkpoint && renderer)
+            renderer->restoreGroupStates(checkpoint);
     }
 
     void updateVisibility(float dt) {

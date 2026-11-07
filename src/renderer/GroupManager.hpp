@@ -78,6 +78,23 @@ private:
 
 class Renderer;
 
+/*
+    A copy of the group states at some point of the level, practice mode
+    checkpoints keep one. Only the groups that have moved, rotated or scaled
+    are in there, most of them never do.
+*/
+struct GroupStateSnapshot {
+    struct Entry {
+        u32 index;
+        glm::mat2 positionalTransform;
+        glm::mat2 localTransform;
+        glm::vec2 offset;
+    };
+
+    std::vector<Entry> entries;
+    std::set<GroupID> disabledGroups;
+};
+
 class GroupManager {
 public:
     inline GroupManager(Renderer& renderer)
@@ -171,6 +188,9 @@ public:
     //// RESET ////
 
     void resetGroupStates();
+
+    GroupStateSnapshot takeSnapshot() const;
+    void restoreSnapshot(const GroupStateSnapshot& snapshot);
 
 private:
     void addGroupCombination(GroupCombination& comb, GroupCombinationIndex index);

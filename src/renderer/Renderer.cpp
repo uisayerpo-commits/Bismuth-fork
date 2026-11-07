@@ -1130,6 +1130,31 @@ void Renderer::reset() {
     groupManager.resetGroupStates();
 }
 
+void Renderer::snapshotGroupStates(const void* checkpoint, cocos2d::CCArray* liveCheckpoints) {
+    // Forget the checkpoints that are gone, long practice runs make a lot of them
+    std::set<const void*> live;
+    live.insert(checkpoint);
+    if (liveCheckpoints) {
+        for (auto object : CCArrayExt<CCObject*>(liveCheckpoints))
+            live.insert(object);
+    }
+
+    for (auto it = checkpointGroupStates.begin(); it != checkpointGroupStates.end();) {
+        if (live.count(it->first))
+            ++it;
+        else
+            it = checkpointGroupStates.erase(it);
+    }
+
+    checkpointGroupStates[checkpoint] = groupManager.takeSnapshot();
+}
+
+void Renderer::restoreGroupStates(const void* checkpoint) {
+    auto it = checkpointGroupStates.find(checkpoint);
+    if (it != checkpointGroupStates.end())
+        groupManager.restoreSnapshot(it->second);
+}
+
 void Renderer::drawLine(const glm::vec2& p1, const glm::vec2& p2, const glm::vec4& color) {
     if (!basicShader)
         basicShader = Shader::create("basic.vert", "basic.frag");

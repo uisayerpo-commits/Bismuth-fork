@@ -344,6 +344,46 @@ void GroupManager::resetGroupStates() {
     groupStatesDirty = true;
 }
 
+GroupStateSnapshot GroupManager::takeSnapshot() const {
+    GroupStateSnapshot snapshot;
+    snapshot.disabledGroups = disabledGroups;
+
+    const glm::mat2 identity = glm::identity<glm::mat2>();
+    const glm::vec2 zero(0.f, 0.f);
+
+    for (usize i = 0; i < groupStates.size(); i++) {
+        const auto& state = groupStates[i];
+        if (state.positionalTransform == identity && state.localTransform == identity && state.offset == zero)
+            continue;
+
+        snapshot.entries.push_back({
+            (u32)i,
+            state.positionalTransform,
+            state.localTransform,
+            state.offset
+        });
+    }
+    return snapshot;
+}
+
+void GroupManager::restoreSnapshot(const GroupStateSnapshot& snapshot) {
+    resetGroupStates();
+
+    for (const auto& entry : snapshot.entries) {
+        if (entry.index >= groupStates.size())
+            continue;
+
+        auto& state = groupStates[entry.index];
+        state.positionalTransform = entry.positionalTransform;
+        state.localTransform = entry.localTransform;
+        state.offset = entry.offset;
+        haveGroupStatesScaled[entry.index] = true;
+    }
+
+    disabledGroups = snapshot.disabledGroups;
+    groupStatesDirty = true;
+}
+
 void GroupManager::addGroupCombination(GroupCombination& comb, GroupCombinationIndex index) {
     groupCombinationIndicies[comb] = index;
 

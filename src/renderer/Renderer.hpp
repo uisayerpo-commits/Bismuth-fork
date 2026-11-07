@@ -51,6 +51,7 @@ private:
     bool visEnterArea = false;
     // Debug tools normally switch the CPU optimizations off, this keeps them on
     bool keepOptimizationsInDebug = false;
+    std::map<const void*, GroupStateSnapshot> checkpointGroupStates;
     // Every object that was in the level when it loaded, anything else in a game batch node was created later
     std::unordered_set<GameObject*> initialObjects;
     // How many children each game batch node had the last time they were looked at
@@ -181,6 +182,10 @@ public:
     inline GroupManager& getGroupManager() { return groupManager; }
     
     void reset();
+
+    // Practice mode checkpoints: the group states at the time of the checkpoint
+    void snapshotGroupStates(const void* checkpoint, cocos2d::CCArray* liveCheckpoints);
+    void restoreGroupStates(const void* checkpoint);
 
     void drawLine(const glm::vec2& p1, const glm::vec2& p2, const glm::vec4& color);
 
