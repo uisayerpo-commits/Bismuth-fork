@@ -1,6 +1,8 @@
 #pragma once
 
 #include <map>
+#include <set>
+#include <string>
 #include <algorithm>
 #include <vector>
 #include <unordered_set>
@@ -19,6 +21,8 @@
 #include "GroupManager.hpp"
 #include "ObjectBatchNode.hpp"
 #include "../../resources/shaders/headers/shared.h"
+
+class EnterEffectInstance;
 
 using namespace geode;
 
@@ -51,6 +55,7 @@ private:
     bool scaleTriggers = true;
     bool visPreUpdate = false;
     bool visEnterArea = false;
+    bool tintOnGPU = true;
     // Debug tools normally switch the CPU optimizations off, this keeps them on
     bool keepOptimizationsInDebug = false;
     std::map<const void*, GroupStateSnapshot> checkpointGroupStates;
@@ -181,6 +186,19 @@ public:
     float particleTimeLeft = 0.0f;
     inline bool getVisPreUpdate() const { return visPreUpdate; }
     inline bool getVisEnterArea() const { return visEnterArea; }
+
+    //// AREA TINT ////
+    // Area tint triggers drawn by the culling shader. The game's processAreaVisualActions is still
+    // what walks the instances (it animates their values), see captureTintInstance.
+    inline bool getTintOnGPU() const { return tintOnGPU && enabled; }
+    // Called once a frame before the game goes through its area effects
+    inline void tintBeginFrame() { tintFrameCount = 0; }
+    /*
+        Called from the hook of GJBaseGameLayer::processAreaTintGroupAction. Remembers the instance for
+        the shader. Returns false when this instance can't be drawn on the GPU (it is logged once), the
+        game's own code has to run for it.
+    */
+    bool captureTintInstance(EnterEffectInstance* instance, const cocos2d::CCPoint& position, bool targetGroups);
     inline bool useOptVisibility() { return optVisibility && useOptimizations(); }
     inline bool useOptRotation() { return optRotation && useOptimizations(); }
     inline bool useOptMove() { return optMove && useOptimizations(); }
@@ -286,6 +304,16 @@ private:
 
     GameStateBuffer gameState;
     Buffer* gameStateBuffer = nullptr;
+
+    // The area tint instances of this frame, written into tintBufferObject when the frame is drawn
+    UPtr<TintBuffer> tintData;
+    Buffer* tintBufferObject = nullptr;
+    u32 tintFrameCount = 0;
+    u32 tintUploadedCount = 0;
+    std::set<int> tintWarnings;
+    void tintWarnOnce(int id, const std::string& message);
+    void checkTintLayout(EnterEffectInstance* instance);
+    void logTintSelfTest();
 
     bool differenceModeEnabled = false;
     DifferenceMode differenceMode;

@@ -101,6 +101,9 @@ class $modify(RendererPlayLayer, PlayLayer) {
         PerfScope perfScope(0);
         auto timer = BProfiler::start("PlayLayer::updateVisibility");
         auto renderer = Renderer::get();
+        // The area tint instances are collected again every frame, while the game walks its area effects
+        if (renderer)
+            renderer->tintBeginFrame();
         if (renderer && renderer->useOptVisibility()) {
             ((decomp_PlayLayer*)this)->optimized_updateVisibility(dt);
             timer.end();
@@ -168,6 +171,27 @@ class $modify(RendererGJBaseGameLayer, GJBaseGameLayer) {
             PerfScope perfScope(4);
             renderer->update(dt);
         }
+    }
+
+    // The game goes through the target group of every area tint instance here and sets the colors of
+    // the objects, which the GPU renderer doesn't use. The renderer remembers the instance instead.
+    void processAreaTintGroupAction(CCArray* objects, EnterEffectInstance* instance, CCPoint position, bool targetGroups) {
+        auto renderer = Renderer::get();
+        bool captured = renderer && renderer->captureTintInstance(instance, position, targetGroups);
+
+        // With the optimizations off (debug tools) the vanilla objects are what the difference mode compares to
+        if (!captured || !renderer->useOptimizations())
+            GJBaseGameLayer::processAreaTintGroupAction(objects, instance, position, targetGroups);
+    }
+
+    // Area fade only sets the opacity of the CPU objects, which the GPU renderer doesn't use (yet).
+    // Skipping it saves a loop over every object in the target groups.
+    void processAreaFadeGroupAction(CCArray* objects, EnterEffectInstance* instance, CCPoint position, bool targetGroups) {
+        auto renderer = Renderer::get();
+        if (renderer && renderer->getTintOnGPU() && renderer->useOptimizations())
+            return;
+
+        GJBaseGameLayer::processAreaFadeGroupAction(objects, instance, position, targetGroups);
     }
 
     void processMoveActions() {

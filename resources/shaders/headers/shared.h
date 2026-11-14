@@ -143,6 +143,7 @@ mat2 scaleMatrix(float scale) {
 #define SPRITE_STATE_BUFFER_BINDING      13
 #define WORK_GROUP_OUTPUT_BUFFER_BINDING 14
 #define LAYER_INFO_BUFFER_BINDING        15
+#define TINT_BUFFER_BINDING              16
 // 16 counters, then one counter per color channel for the sprites that were drawn,
 // then one per color channel for the sprites that ended up with alpha 0 (1101 color channels)
 #define DIAGNOSTICS_SCALAR_COUNT         16
@@ -154,6 +155,7 @@ mat2 scaleMatrix(float scale) {
 #include "groupStateBuffer.h"
 #include "objectInfoBuffer.h"
 #include "gameStateBuffer.h"
+#include "tintBuffer.h"
 #include "rawSpriteBuffer.h"
 #include "inputSpriteBuffer.h"
 #include "workGroupBuffer.h"

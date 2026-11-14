@@ -131,6 +131,7 @@ bool isObjectOnScreen();
 float calculateAudioScale();
 vec4 calculateInvisibleBlockColorAndOpacity(vec4 color);
 vec4 applyHSV(HSV hsvValue, vec4 color);
+vec3 applyAreaTint(vec3 rgb, uint tintMask, uint varianceIndex);
 
 //// PROCESS SPRITE FUNCTION ////
 void processSprite(uint spriteIndex) {
@@ -193,6 +194,10 @@ void processSprite(uint spriteIndex) {
     } else if (spriteType == SPRITE_TYPE_DETAIL && (objectFlags & OBJECT_FLAG_HAS_DETAIL_HSV) != 0u) {
         color = applyHSV(object.detailHSV, color);
     }
+
+    // Area tint triggers, applied on top of the object's own color like the game does
+    if (state.tintMask != 0u && u_tintCount != 0u && (spriteType == SPRITE_TYPE_BASE || spriteType == SPRITE_TYPE_DETAIL))
+        color.rgb = applyAreaTint(color.rgb, state.tintMask, object.varianceIndex);
 
     #ifdef BISMUTH_DIAGNOSTICS
     if ((u_gameStateFlags & GAME_STATE_COLLECT_DIAGNOSTICS) != 0u)
@@ -427,4 +432,95 @@ vec4 calculateInvisibleBlockColorAndOpacity(vec4 color) {
     }
 
     return color;
+}
+
+//// AREA TINT ////
+float tintVariance(uint index) {
+    index = min(index, uint(TINT_VARIANCE_COUNT - 1));
+    return u_tintVariance[index >> 2u][index & 3u];
+}
+
+/*
+    The game's processAreaTintGroupAction, for one object. The instances are in the order the game
+    walks them, every one mixes on top of the result of the one before it.
+*/
+vec3 applyAreaTint(vec3 rgb, uint tintMask, uint varianceIndex) {
+    bool isBase = spriteType == SPRITE_TYPE_BASE;
+    uint count = min(u_tintCount, uint(TINT_MAX_INSTANCES));
+
+    for (uint i = 0u; i < count; i++) {
+        vec4 v3 = u_tintData[i * 4u + 3u];
+
+        uint slot = min(uint(v3.y), 31u);
+        if ((tintMask & (1u << slot)) == 0u)
+            continue;
+
+        uint flags = uint(v3.w);
+        if ((flags & (isBase ? 2u : 4u)) == 0u)
+            continue;
+
+        vec4 v0 = u_tintData[i * 4u];
+        vec4 v1 = u_tintData[i * 4u + 1u];
+        vec4 v2 = u_tintData[i * 4u + 2u];
+
+        // The length is cut to a whole number, with the random variance in it
+        float tintLength = v0.z;
+        if (v0.w != 0.0)
+            tintLength += v0.w * tintVariance(varianceIndex);
+        tintLength = float(int(tintLength));
+
+        float offsetVariance = v1.x * tintVariance(varianceIndex + 1u);
+
+        uint mode = uint(v3.z);
+        float dist;
+        if (mode == 1u) {
+            dist = objectPosition.x - v0.x + offsetVariance;
+        } else if (mode == 2u) {
+            dist = objectPosition.y - v0.y + offsetVariance;
+        } else {
+            vec2 center = vec2(v0.x + offsetVariance, v0.y + v1.y * tintVariance(varianceIndex + 2u));
+            dist = distance(objectPosition, center);
+        }
+
+        if (mode == 1u || mode == 2u)
+            dist *= (dist < 0.0) ? v1.z : v1.w;
+
+        // dist / tintLength, the way a CPU float divide would give it, also for a length of 0
+        float q;
+        if (abs(tintLength) < 1e-6)
+            q = (dist > 0.0) ? 1e9 : ((dist < 0.0) ? -1e9 : 0.0);
+        else
+            q = dist / tintLength;
+
+        float deadzone = v2.x;
+        if (deadzone != 0.0) {
+            float denom = 1.0 - deadzone;
+            if (abs(denom) < 1e-6)
+                denom = 1e-6;
+            q = (q - deadzone) / denom;
+        }
+
+        bool reversed = (flags & 1u) != 0u;
+        float t;
+        if (q >= 1.0) {
+            if (!reversed)
+                continue;
+            t = 0.0;
+        } else if (q > 0.0) {
+            t = reversed ? (1.0 - q) : q;
+        } else {
+            if (reversed)
+                continue;
+            t = 0.0;
+        }
+
+        float amount = v2.y;
+        float mixFactor = (1.0 - amount) + t * amount;
+        vec3 tintColor = vec3(v2.zw, v3.x);
+
+        // GameToolbox::multipliedColorValue(tintColor, objectColor, mixFactor)
+        rgb = mix(tintColor, rgb, mixFactor);
+    }
+
+    return rgb;
 }

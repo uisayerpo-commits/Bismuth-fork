@@ -1,5 +1,9 @@
 #include "Renderer.hpp"
 #include <Geode/binding/EffectGameObject.hpp>
+#include <Geode/binding/EnterEffectInstance.hpp>
+#include <Geode/binding/EnterEffectObject.hpp>
+#include <Geode/binding/GameToolbox.hpp>
+#include <cstring>
 #include <chrono>
 #include <set>
 #include <algorithm>
@@ -88,6 +92,7 @@ bool Renderer::init(PlayLayer* layer, CCArray* levelObjects) {
     scaleTriggers       = Mod::get()->getSettingValue<bool>("scale_triggers");
     visPreUpdate        = Mod::get()->getSettingValue<bool>("vis_pre_update");
     visEnterArea        = Mod::get()->getSettingValue<bool>("vis_enter_area");
+    tintOnGPU           = Mod::get()->getSettingValue<bool>("tint_triggers");
     keepOptimizationsInDebug = Mod::get()->getSettingValue<bool>("debug_keep_optimizations");
     blog::info(
         "Optimizations active: {} (visibility {}, rotation {}, move {}, deco removal {})",
@@ -263,6 +268,17 @@ bool Renderer::init(PlayLayer* layer, CCArray* levelObjects) {
     if (!gameStateBuffer)
         return false;
 
+    // Zero filled, no area tint instances until the game has some
+    tintData = makeUnique<TintBuffer>();
+    std::memset(tintData.get(), 0, sizeof(TintBuffer));
+    tintBufferObject = Buffer::createDynamicDraw("Area tint buffer", sizeof(TintBuffer));
+    if (!tintBufferObject)
+        return false;
+    tintBufferObject->write(tintData.get(), sizeof(TintBuffer));
+    tintFrameCount = 0;
+    tintUploadedCount = 0;
+    logTintSelfTest();
+
     blog::info("Generating vertex buffer...");
 
     for (auto& value : colorChannelsIsBlending)
@@ -409,7 +425,7 @@ void Renderer::terminate() {
         *s = nullptr;
     }
 
-    Buffer** buffers[] = { &colorChannelBufferObject, &srbBuffer, &gameStateBuffer };
+    Buffer** buffers[] = { &colorChannelBufferObject, &srbBuffer, &gameStateBuffer, &tintBufferObject };
     for (Buffer** b : buffers) {
         if (*b)
             Buffer::destroy(*b);
@@ -679,6 +695,21 @@ void Renderer::prepareShaderUniforms() {
         gameState.u_audioScale = 0.5;
 
     gameStateBuffer->write(&gameState, sizeof(gameState));
+
+    // The area tint instances captured this frame. Nothing is written while there are none, and the
+    // frame after the last one went away writes the zero count.
+    if (tintBufferObject && tintData && (tintFrameCount > 0 || tintUploadedCount > 0)) {
+        tintData->u_tintCount = tintFrameCount;
+
+        // The game's table of random numbers (variance), the shader reads the index of every object
+        if (tintFrameCount > 0) {
+            static_assert(sizeof(tintData->u_tintVariance) == TINT_VARIANCE_COUNT * sizeof(float), "variance table size");
+            std::memcpy(tintData->u_tintVariance, layer->m_varianceValues.data(), TINT_VARIANCE_COUNT * sizeof(float));
+        }
+
+        tintBufferObject->write(tintData.get(), sizeof(TintBuffer));
+        tintUploadedCount = tintFrameCount;
+    }
 }
 
 void Renderer::prepareColorChannelBuffer() {
@@ -785,6 +816,7 @@ bool Renderer::generateStaticRenderingBuffer(std::vector<GameObject*>& objects) 
         objectInfo->opacity = (object->m_opacityMod2 > 0.0) ? object->m_opacityMod2 : 1.0;
 
         objectInfo->groupCombinationIndex = groupManager.getGroupCombinationIndexForObject(object);
+        objectInfo->varianceIndex = (u32)std::max<i32>(0, (i32)object->m_varianceIndex);
 
         if (object->m_isInvisibleBlock) objectInfo->flags |= OBJECT_FLAG_IS_INVISIBLE_BLOCK;
         if (object->m_customGlowColor)  objectInfo->flags |= OBJECT_FLAG_SPECIAL_GLOW_COLOR;
@@ -1080,6 +1112,7 @@ void Renderer::bindCullingComputeShaderBuffers() {
     gameStateBuffer->bindAsUniformBuffer(GAME_STATE_BUFFER_BINDING);
     srbBuffer->bindAsStorageBuffer(OBJECT_INFO_BUFFER_BINDING);
     colorChannelBufferObject->bindAsStorageBuffer(COLOR_CHANNEL_BUFFER_BINDING);
+    tintBufferObject->bindAsUniformBuffer(TINT_BUFFER_BINDING);
     groupManager.bindGroupStateBuffer();
 }
 
@@ -1304,4 +1337,151 @@ void restoreGLStates() {
     */
     glBindTexture(GL_TEXTURE_2D, *storedTextures);
     PROFILER_POP();
+}
+
+//// AREA TINT ////
+
+// Reads a field of a game object by its offset. The offsets come from the decompiled
+// GJBaseGameLayer::processAreaTintGroupAction and processAreaEffects.
+template <typename T>
+static T tintRead(const void* base, usize offset) {
+    T value;
+    std::memcpy(&value, (const char*)base + offset, sizeof(T));
+    return value;
+}
+
+void Renderer::tintWarnOnce(int id, const std::string& message) {
+    if (tintWarnings.insert(id).second)
+        geode::log::warn("[tint] {}", message);
+}
+
+void Renderer::checkTintLayout(EnterEffectInstance* instance) {
+    // Only informative, the capture reads everything by the offsets from the decompile
+    auto offsetOf = [&](const void* member) { return (usize)((const char*)member - (const char*)instance); };
+    auto* effect = instance->m_gameObject;
+
+    bool instanceOk =
+        offsetOf(&instance->m_length) == 0x30 && offsetOf(&instance->m_lengthVariance) == 0x34 &&
+        offsetOf(&instance->m_offsetVariance) == 0x3c && offsetOf(&instance->m_offsetYVariance) == 0x44 &&
+        offsetOf(&instance->m_modFront) == 0x48 && offsetOf(&instance->m_modBack) == 0x4c &&
+        offsetOf(&instance->m_deadzone) == 0x50 && offsetOf(&instance->m_tint) == 0x90 &&
+        offsetOf(&instance->m_gameObject) == 0xc0 && offsetOf(&instance->m_targetID) == 0xcc &&
+        offsetOf(&instance->m_centerID) == 0xd0 && offsetOf(&instance->m_paused) == 0xdc &&
+        offsetOf(&instance->m_targetGroupIndex) == 0xe0;
+
+    bool effectOk = false;
+    if (effect) {
+        auto effectOffset = [&](const void* member) { return (usize)((const char*)member - (const char*)effect); };
+        effectOk =
+            effectOffset(&effect->m_tintChannelID) == 0x794 && effectOffset(&effect->m_directionType) == 0x79c &&
+            effectOffset(&effect->m_inbound) == 0x7c8 && effectOffset(&effect->m_hsvEnabled) == 0x7c9;
+    }
+
+    geode::log::info(
+        "[tint] first area tint instance: Geode's field names match the offsets in the game's code: instance {}, trigger {}",
+        instanceOk ? "yes" : "NO", effectOk ? "yes" : "NO"
+    );
+
+    auto offsetOfLayer = (usize)((const char*)&layer->m_varianceValues - (const char*)layer);
+    geode::log::info("[tint] variance table offset in the layer: 0x{:x} (the game's code uses 0x1124)", offsetOfLayer);
+}
+
+void Renderer::logTintSelfTest() {
+    // The shader mixes the colors linearly, like GameToolbox::multipliedColorValue(tint, color, factor)
+    // looks to do by its argument names. This runs the real function so the log shows if that is so.
+    auto test = [](ccColor3B minColor, ccColor3B maxColor, float factor) {
+        ccColor3B result = GameToolbox::multipliedColorValue(minColor, maxColor, factor);
+        auto linear = [&](u8 a, u8 b) { return (int)(a + (b - a) * factor); };
+        geode::log::info(
+            "[tint] multipliedColorValue(({},{},{}), ({},{},{}), {}) = ({},{},{}), a linear mix gives about ({},{},{})",
+            minColor.r, minColor.g, minColor.b, maxColor.r, maxColor.g, maxColor.b, factor,
+            result.r, result.g, result.b,
+            linear(minColor.r, maxColor.r), linear(minColor.g, maxColor.g), linear(minColor.b, maxColor.b)
+        );
+    };
+    test(ccc3(255, 0, 0), ccc3(0, 0, 255), 0.25f);
+    test(ccc3(200, 100, 50), ccc3(0, 50, 250), 0.8f);
+}
+
+bool Renderer::captureTintInstance(EnterEffectInstance* instance, const CCPoint& position, bool targetGroups) {
+    if (!getTintOnGPU() || !tintData || !instance)
+        return false;
+
+    if (tintWarnings.insert(-1).second)
+        checkTintLayout(instance);
+
+    // Offsets in EnterEffectInstance: 0x30 length, 0x34 length variance, 0x3c offset variance,
+    // 0x44 offset Y variance, 0x48 mod front, 0x4c mod back, 0x50 deadzone, 0x90 tint, 0xc0 trigger object,
+    // 0xcc target group, 0xd0 center group, 0xe0 target group index
+    auto* effect = tintRead<void*>(instance, 0xc0);
+    if (!effect)
+        return false;
+
+    // This is the pass for objects that get their effect from a parent group, not drawn yet
+    if (targetGroups || tintRead<i32>(instance, 0xe0) > 0) {
+        tintWarnOnce(1, "an area tint trigger uses a target group index (linked group), that is not drawn on the GPU");
+        return false;
+    }
+
+    // Offsets in EnterEffectObject: 0x794 tint channel, 0x79c mode, 0x7c8 inbound (reversed),
+    // 0x7c9 HSV enabled, 0x651 / 0x652 don't tint detail / base, 0x5f4 center override
+    if (tintRead<u8>(effect, 0x7c9) != 0) {
+        tintWarnOnce(2, "an area tint trigger uses HSV, that is not drawn on the GPU yet");
+        return false;
+    }
+
+    float tintAmount = tintRead<float>(instance, 0x90);
+    if (tintAmount == 0.0f)
+        return true; // mixes nothing
+
+    i32 slot = groupManager.getTintSlot(tintRead<i32>(instance, 0xcc));
+    if (slot == GroupManager::TINT_SLOT_NO_OBJECTS)
+        return true; // no object to tint
+    if (slot < 0) {
+        tintWarnOnce(3, "an area tint trigger targets a 33rd different group, only 32 are drawn on the GPU");
+        return false;
+    }
+
+    if (tintFrameCount >= TINT_MAX_INSTANCES) {
+        tintWarnOnce(4, "more than 32 area tint instances are active at once, the rest is not drawn on the GPU");
+        return false;
+    }
+
+    // The center the game worked out already has the trigger's offset in it. When the center is an
+    // object, the game used the position of the object on the CPU, which doesn't follow the move and
+    // rotate triggers that run on the GPU. Replace that part with where the object is drawn.
+    glm::vec2 center = ccPointToGLM(position);
+
+    i32 centerId = tintRead<i32>(effect, 0x5f4);
+    if (centerId == 0)
+        centerId = tintRead<i32>(instance, 0xd0);
+
+    if (centerId > 0) {
+        GameObject* centerObject = layer->tryGetMainObject(centerId);
+        if (centerObject)
+            center += groupManager.getObjectPosition(centerObject) - ccPointToGLM(centerObject->getRealPosition());
+    }
+
+    ccColor3B tintColor = layer->m_effectManager->activeColorForIndex(tintRead<i32>(effect, 0x794));
+
+    u32 flags = 0;
+    if (tintRead<u8>(effect, 0x7c8) != 0) flags |= 1; // reversed
+    if (tintRead<u8>(effect, 0x652) == 0) flags |= 2; // tints the base color
+    if (tintRead<u8>(effect, 0x651) == 0) flags |= 4; // tints the detail color
+
+    i32 mode = tintRead<i32>(effect, 0x79c);
+    if (mode != 1 && mode != 2)
+        mode = 0;
+
+    glm::vec4* data = &tintData->u_tintData[tintFrameCount * 4];
+    data[0] = glm::vec4(center.x, center.y, tintRead<float>(instance, 0x30), tintRead<float>(instance, 0x34));
+    data[1] = glm::vec4(
+        tintRead<float>(instance, 0x3c), tintRead<float>(instance, 0x44),
+        tintRead<float>(instance, 0x48), tintRead<float>(instance, 0x4c)
+    );
+    data[2] = glm::vec4(tintRead<float>(instance, 0x50), tintAmount, tintColor.r / 255.0f, tintColor.g / 255.0f);
+    data[3] = glm::vec4(tintColor.b / 255.0f, (float)slot, (float)mode, (float)flags);
+
+    tintFrameCount++;
+    return true;
 }

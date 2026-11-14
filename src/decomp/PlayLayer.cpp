@@ -367,6 +367,10 @@ void decomp_PlayLayer::optimized_updateVisibility(float delta) {
     if (doEnterArea) {
         updateEnterEffects(delta);
         processAreaVisualActions(delta);
+    } else if (renderer && renderer->getTintOnGPU()) {
+        // This walks the area tint instances, the hook of processAreaTintGroupAction hands them to the
+        // renderer. It also animates the values of the instances, which is why it has to run.
+        processAreaVisualActions(delta);
     }
     if (doParticles) {
         // The particle update only starts and stops systems, it does not need every frame

@@ -153,6 +153,9 @@ bool GroupManager::initWithObjects(cocos2d::CCArray* objects) {
 
     groupStates.clear();
     groupStates.resize(groupCombinationCount);
+    for (auto& groupState : groupStates)
+        groupState.tintMask = 0;
+    tintSlotGroups.clear();
     groupStatesDirty = true;
 
     groupStateBuffer = Buffer::createDynamicDraw("Group state buffer", getGroupStateBufferSize());
@@ -182,6 +185,41 @@ GroupCombinationIndex GroupManager::getTransformCombinationIndexForObject(GameOb
         return 0;
 
     return it->second;
+}
+
+i32 GroupManager::getTintSlot(i32 groupId) {
+    if (groupId < 0 || (usize)groupId >= groupCombinationIndiciesPerGroupId.size())
+        return TINT_SLOT_NO_OBJECTS;
+
+    auto& combinations = groupCombinationIndiciesPerGroupId[groupId];
+    if (combinations.empty())
+        return TINT_SLOT_NO_OBJECTS;
+
+    for (usize i = 0; i < tintSlotGroups.size(); i++) {
+        if (tintSlotGroups[i] == (GroupID)groupId)
+            return (i32)i;
+    }
+
+    if (tintSlotGroups.size() >= 32)
+        return TINT_SLOT_FULL;
+
+    i32 slot = (i32)tintSlotGroups.size();
+    tintSlotGroups.push_back((GroupID)groupId);
+
+    for (auto combIndex : combinations)
+        groupStates[combIndex].tintMask |= (1u << slot);
+    groupStatesDirty = true;
+
+    return slot;
+}
+
+glm::vec2 GroupManager::getObjectPosition(GameObject* object) {
+    GroupCombinationIndex index = getGroupCombinationIndexForObject(object);
+    if (index >= groupStates.size())
+        return ccPointToGLM(object->m_startPosition);
+
+    auto& state = groupStates[index];
+    return state.positionalTransform * ccPointToGLM(object->getStartPos()) + state.offset;
 }
 
 void GroupManager::fetchVanilaRotateGroups() {

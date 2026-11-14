@@ -159,6 +159,24 @@ public:
 
     void prepareGroupStateBuffer();
 
+    //// AREA TINT ////
+
+    static constexpr i32 TINT_SLOT_NO_OBJECTS = -2; // no object uses the group
+    static constexpr i32 TINT_SLOT_FULL       = -1; // all 32 slots are taken by other groups
+
+    /*
+        Area tint targets a group. Every group a tint trigger targets gets a slot (0 to 31), and the
+        group combinations that contain the group get that bit in their tintMask. The slots are given
+        out the first time a group is asked for, the shader checks the mask of every sprite.
+    */
+    i32 getTintSlot(i32 groupId);
+
+    /*
+        Where the object is right now according to the group states, which is what the shader draws.
+        The game's own position of an object in an optimized group doesn't move.
+    */
+    glm::vec2 getObjectPosition(GameObject* object);
+
     //// TRIGGER ACTIONS ////
 
     void moveGroup(GroupID groupId, float deltaX, float deltaY);
@@ -193,6 +211,8 @@ public:
     void restoreSnapshot(const GroupStateSnapshot& snapshot);
 
 private:
+    std::vector<GroupID> tintSlotGroups;
+
     void addGroupCombination(GroupCombination& comb, GroupCombinationIndex index);
 
 private:

@@ -27,6 +27,8 @@ struct ObjectInfo {
     uint detailColorChannelId;
     HSV detailHSV;
     uint groupCombinationIndex;
+    // The game's per-object index into its table of random numbers (area effect variance)
+    uint varianceIndex;
 };
 
 /*

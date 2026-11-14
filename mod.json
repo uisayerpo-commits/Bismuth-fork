@@ -6,7 +6,7 @@
 	},
 	"id": "iliashdz.bismuth",
 	"name": "Bismuth (experimental)",
-	"version": "v0.1.0-alpha.27",
+	"version": "v0.1.0-alpha.28",
 	"developer": "IliasHDZ",
 	"description": "Rendering optimization mod",
 	"dependencies": {
@@ -70,6 +70,12 @@
 			"type": "bool",
 			"default": true,
 			"description": "Makes scale and transform triggers (scale, skew, only move, center group) show up in the rendering. Next level load."
+		},
+		"tint_triggers": {
+			"name": "Area tint triggers",
+			"type": "bool",
+			"default": true,
+			"description": "Draws area tint triggers in the GPU rendering (RGB tint, no HSV yet). Also skips the game's CPU work for area tint and area fade. Next level load."
 		},
 		"debug_keep_optimizations": {
 			"name": "Keep optimizations with debug tools",
