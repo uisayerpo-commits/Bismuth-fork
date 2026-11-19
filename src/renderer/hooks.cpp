@@ -420,8 +420,10 @@ class $modify(RendererGJBaseGameLayer, GJBaseGameLayer) {
     void toggleGroup(int id, bool activate) {
         GJBaseGameLayer::toggleGroup(id, activate);
         auto renderer = Renderer::get();
-        if (renderer)
+        if (renderer) {
             renderer->getGroupManager().toggleGroup(id, activate);
+            renderer->markParticleGroupsChanged();
+        }
     }
 
     void optimizeMoveGroups() {

@@ -2,6 +2,7 @@
 #include <Geode/binding/EffectGameObject.hpp>
 #include <Geode/binding/EnterEffectInstance.hpp>
 #include <Geode/binding/EnterEffectObject.hpp>
+#include <Geode/binding/ParticleGameObject.hpp>
 #include <Geode/binding/GameToolbox.hpp>
 #include <cstring>
 #include <chrono>
@@ -93,6 +94,7 @@ bool Renderer::init(PlayLayer* layer, CCArray* levelObjects) {
     visPreUpdate        = Mod::get()->getSettingValue<bool>("vis_pre_update");
     visEnterArea        = Mod::get()->getSettingValue<bool>("vis_enter_area");
     tintOnGPU           = Mod::get()->getSettingValue<bool>("tint_triggers");
+    hideDisabledParticles = Mod::get()->getSettingValue<bool>("hide_disabled_particles");
     keepOptimizationsInDebug = Mod::get()->getSettingValue<bool>("debug_keep_optimizations");
     blog::info(
         "Optimizations active: {} (visibility {}, rotation {}, move {}, deco removal {})",
@@ -133,6 +135,23 @@ bool Renderer::init(PlayLayer* layer, CCArray* levelObjects) {
             if (object->m_isGroupDisabled) groupDisabled++;
         }
         blog::info("High detail objects: {}, disabled: {}, group disabled: {}", highDetail, disabled, groupDisabled);
+    }
+    {
+        // The particle objects (id 2065), updateDisabledParticles looks after the ones a toggle trigger turns off
+        particleObjects.clear();
+        particlesHiddenByUs.clear();
+        particleGroupsChanged = true;
+        usize startDisabled = 0;
+        for (auto object : CCArrayExt<GameObject*>(levelObjects)) {
+            if (object->m_objectID != 2065)
+                continue;
+            if (auto particle = typeinfo_cast<ParticleGameObject*>(object)) {
+                particleObjects.push_back(particle);
+                if (object->m_isGroupDisabled)
+                    startDisabled++;
+            }
+        }
+        geode::log::info("[particles] {} particle objects, {} start turned off by a toggle trigger", particleObjects.size(), startDisabled);
     }
     {
         // Area effect triggers (ids 3006 to 3010) are not supported yet, this shows what a level asks of them
@@ -1197,6 +1216,61 @@ void Renderer::setEnabled(bool enabled) {
 
 void Renderer::reset() {
     groupManager.resetGroupStates();
+    particleGroupsChanged = true;
+}
+
+void Renderer::updateDisabledParticles() {
+    if (!hideDisabledParticles || particleObjects.empty())
+        return;
+    if (!particleGroupsChanged && particlesHiddenByUs.empty())
+        return;
+
+    // Same as the game's preUpdateVisibility: an object whose group is turned off gets deactivated
+    if (particleGroupsChanged) {
+        particleGroupsChanged = false;
+
+        usize hidden = 0;
+        for (auto particle : particleObjects) {
+            if (particle->m_isGroupDisabled && particle->m_isActivated) {
+                particle->deactivateObject(true);
+                particlesHiddenByUs.insert(particle);
+                hidden++;
+            }
+        }
+
+        if (hidden > 0)
+            geode::log::info("[particles] deactivated {} particle objects whose group is turned off", hidden);
+    }
+
+    if (particlesHiddenByUs.empty())
+        return;
+
+    // The ones whose group is on again are activated once they are near the camera, which the game's
+    // loop over its active objects does for them
+    CCSize winSize = CCDirector::sharedDirector()->getWinSize();
+    float zoom = std::max(layer->m_gameState.m_cameraZoom, 0.01f);
+    float width = winSize.width / zoom;
+    float height = winSize.height / zoom;
+    CCPoint camera = layer->m_gameState.m_cameraPosition;
+
+    for (auto it = particlesHiddenByUs.begin(); it != particlesHiddenByUs.end();) {
+        ParticleGameObject* particle = *it;
+        if (particle->m_isGroupDisabled) {
+            ++it;
+            continue;
+        }
+
+        CCPoint position = particle->m_startPosition;
+        bool isNear = position.x > camera.x - width && position.x < camera.x + width * 2.0f &&
+                    position.y > camera.y - height && position.y < camera.y + height * 2.0f;
+        if (!isNear) {
+            ++it;
+            continue;
+        }
+
+        particle->activateObject();
+        it = particlesHiddenByUs.erase(it);
+    }
 }
 
 void Renderer::snapshotGroupStates(const void* checkpoint, cocos2d::CCArray* liveCheckpoints) {

@@ -372,6 +372,11 @@ void decomp_PlayLayer::optimized_updateVisibility(float delta) {
         // renderer. It also animates the values of the instances, which is why it has to run.
         processAreaVisualActions(delta);
     }
+    // The game's preUpdateVisibility deactivates the objects whose group is turned off, the particle
+    // objects (fog) are the ones that show when it's skipped
+    if (renderer && !doPre)
+        renderer->updateDisabledParticles();
+
     if (doParticles) {
         // The particle update only starts and stops systems, it does not need every frame
         // of a high refresh rate. It gets the time that passed since it last ran.

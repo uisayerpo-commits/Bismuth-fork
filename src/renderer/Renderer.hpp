@@ -23,6 +23,7 @@
 #include "../../resources/shaders/headers/shared.h"
 
 class EnterEffectInstance;
+class ParticleGameObject;
 
 using namespace geode;
 
@@ -56,6 +57,7 @@ private:
     bool visPreUpdate = false;
     bool visEnterArea = false;
     bool tintOnGPU = true;
+    bool hideDisabledParticles = true;
     // Debug tools normally switch the CPU optimizations off, this keeps them on
     bool keepOptimizationsInDebug = false;
     std::map<const void*, GroupStateSnapshot> checkpointGroupStates;
@@ -187,6 +189,15 @@ public:
     inline bool getVisPreUpdate() const { return visPreUpdate; }
     inline bool getVisEnterArea() const { return visEnterArea; }
 
+    //// TOGGLED OFF PARTICLES ////
+    /*
+        The game's particle objects (fog, smoke) are drawn by the game itself. Its preUpdateVisibility is what
+        deactivates the ones whose group a toggle trigger turned off, and the optimized path doesn't run it.
+        This does that part for the particle objects only.
+    */
+    inline void markParticleGroupsChanged() { particleGroupsChanged = true; }
+    void updateDisabledParticles();
+
     //// AREA TINT ////
     // Area tint triggers drawn by the culling shader. The game's processAreaVisualActions is still
     // what walks the instances (it animates their values), see captureTintInstance.
@@ -304,6 +315,10 @@ private:
 
     GameStateBuffer gameState;
     Buffer* gameStateBuffer = nullptr;
+
+    std::vector<ParticleGameObject*> particleObjects;
+    std::unordered_set<ParticleGameObject*> particlesHiddenByUs;
+    bool particleGroupsChanged = true;
 
     // The area tint instances of this frame, written into tintBufferObject when the frame is drawn
     UPtr<TintBuffer> tintData;

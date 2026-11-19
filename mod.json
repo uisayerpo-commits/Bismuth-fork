@@ -6,7 +6,7 @@
 	},
 	"id": "iliashdz.bismuth",
 	"name": "Bismuth (experimental)",
-	"version": "v0.1.0-alpha.28",
+	"version": "v0.1.0-alpha.29",
 	"developer": "IliasHDZ",
 	"description": "Rendering optimization mod",
 	"dependencies": {
@@ -70,6 +70,12 @@
 			"type": "bool",
 			"default": true,
 			"description": "Makes scale and transform triggers (scale, skew, only move, center group) show up in the rendering. Next level load."
+		},
+		"hide_disabled_particles": {
+			"name": "Fog fix: hide toggled-off particles",
+			"type": "bool",
+			"default": true,
+			"description": "Particle objects (fog, smoke) in a group that a toggle trigger turned off are deactivated like the game does, without running its whole pre-visibility step. Next level load."
 		},
 		"tint_triggers": {
 			"name": "Area tint triggers",
