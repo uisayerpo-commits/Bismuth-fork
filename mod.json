@@ -6,7 +6,7 @@
 	},
 	"id": "iliashdz.bismuth",
 	"name": "Bismuth (experimental)",
-	"version": "v0.1.0-alpha.30",
+	"version": "v0.1.0-alpha.31",
 	"developer": "IliasHDZ",
 	"description": "Rendering optimization mod",
 	"dependencies": {
@@ -76,6 +76,12 @@
 			"type": "bool",
 			"default": true,
 			"description": "Particle objects (fog, smoke) in a group that a toggle trigger turned off are deactivated like the game does, without running its whole pre-visibility step. Next level load."
+		},
+		"active_colors": {
+			"name": "Draw the game's active colors",
+			"type": "bool",
+			"default": true,
+			"description": "Takes the color of every channel from the game's activeColorForIndex, which has the pulses that copy another channel's color. Differences are logged as [colors]. Next level load."
 		},
 		"fade_triggers": {
 			"name": "Area fade triggers",

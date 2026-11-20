@@ -95,6 +95,7 @@ bool Renderer::init(PlayLayer* layer, CCArray* levelObjects) {
     visEnterArea        = Mod::get()->getSettingValue<bool>("vis_enter_area");
     tintOnGPU           = Mod::get()->getSettingValue<bool>("tint_triggers");
     fadeOnGPU           = Mod::get()->getSettingValue<bool>("fade_triggers");
+    useActiveColors     = Mod::get()->getSettingValue<bool>("active_colors");
     hideDisabledParticles = Mod::get()->getSettingValue<bool>("hide_disabled_particles");
     keepOptimizationsInDebug = Mod::get()->getSettingValue<bool>("debug_keep_optimizations");
     blog::info(
@@ -758,6 +759,25 @@ void Renderer::prepareColorChannelBuffer() {
         channelColor.g = sprite->m_color.g;
         channelColor.b = sprite->m_color.b;
         channelColor.a = (u8)sprite->m_opacity;
+
+        // The game draws with activeColorForIndex, which also has the pulses that copy the color of another
+        // channel. The color of the sprite doesn't have them, so the bricks of a level pulsing like that stay white.
+        ccColor3B activeColor = effectManager->activeColorForIndex((int)id);
+        if (activeColor.r != sprite->m_color.r || activeColor.g != sprite->m_color.g || activeColor.b != sprite->m_color.b) {
+            if (colorDifferencesLogged.size() < 40 && colorDifferencesLogged.insert((int)id).second) {
+                geode::log::info(
+                    "[colors] channel {}: sprite color ({},{},{}), active color ({},{},{}), {}",
+                    id, sprite->m_color.r, sprite->m_color.g, sprite->m_color.b,
+                    activeColor.r, activeColor.g, activeColor.b, useActiveColors ? "drawing the active color" : "drawing the sprite color"
+                );
+            }
+
+            if (useActiveColors) {
+                channelColor.r = activeColor.r;
+                channelColor.g = activeColor.g;
+                channelColor.b = activeColor.b;
+            }
+        }
     }
 
     colorChannelBuffer->u_channelColors[COLOR_CHANNEL_BLACK] = { 0, 0, 0, 255 };

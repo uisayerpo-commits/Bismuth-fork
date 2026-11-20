@@ -58,6 +58,8 @@ private:
     bool visEnterArea = false;
     bool tintOnGPU = true;
     bool fadeOnGPU = true;
+    bool useActiveColors = true;
+    std::set<int> colorDifferencesLogged;
     bool hideDisabledParticles = true;
     // Debug tools normally switch the CPU optimizations off, this keeps them on
     bool keepOptimizationsInDebug = false;
