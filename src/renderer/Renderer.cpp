@@ -4,6 +4,7 @@
 #include <Geode/binding/EnterEffectObject.hpp>
 #include <Geode/binding/ParticleGameObject.hpp>
 #include <Geode/binding/GameToolbox.hpp>
+#include <Geode/loader/Addresser.hpp>
 #include <cstring>
 #include <chrono>
 #include <set>
@@ -292,6 +293,7 @@ bool Renderer::init(PlayLayer* layer, CCArray* levelObjects) {
     // Zero filled, no area tint instances until the game has some
     tintData = makeUnique<TintBuffer>();
     std::memset(tintData.get(), 0, sizeof(TintBuffer));
+    setupLighterColor();
     tintBufferObject = Buffer::createDynamicDraw("Area tint buffer", sizeof(TintBuffer));
     if (!tintBufferObject)
         return false;
@@ -815,6 +817,41 @@ static u32 convertToShaderHSV(const ccHSVValue& hsv) {
     if (hsv.absoluteSaturation) ret |= HSV_SAT_ADD;
     if (hsv.absoluteBrightness) ret |= HSV_VAL_ADD;
     return ret;
+}
+
+void Renderer::setupLighterColor() {
+    /*
+        GameObject::getActiveColorForMode(1012, ...) runs the color through GJEffectManager::colorForEffect
+        with a hue of 0, a saturation that is multiplied, and a brightness that is added (the second flag of the
+        HSV). The saturation and the brightness are two floats in the literal pool right behind the function,
+        at 0x130 and 0x134 bytes from its start (DAT_0074a808 and DAT_0074a80c, the function is at 0074a6d8).
+    */
+    tintData->u_lighterHSV = 0;
+
+    auto function = (const u8*)geode::addresser::getNonVirtual(&GameObject::getActiveColorForMode);
+    if (!function) {
+        geode::log::warn("[lighter] couldn't find GameObject::getActiveColorForMode, the Lighter channel keeps its own color");
+        return;
+    }
+
+    float saturation, brightness;
+    std::memcpy(&saturation, function + 0x130, sizeof(float));
+    std::memcpy(&brightness, function + 0x134, sizeof(float));
+
+    if (!std::isfinite(saturation) || !std::isfinite(brightness) || std::fabs(saturation) > 4.0f || std::fabs(brightness) > 4.0f) {
+        geode::log::warn("[lighter] the values in the game's code look wrong (saturation {}, brightness {}), the Lighter channel keeps its own color", saturation, brightness);
+        return;
+    }
+
+    ccHSVValue hsv;
+    hsv.h = 0.0f;
+    hsv.s = saturation;
+    hsv.v = brightness;
+    hsv.absoluteSaturation = false;
+    hsv.absoluteBrightness = true;
+    tintData->u_lighterHSV = convertToShaderHSV(hsv);
+
+    geode::log::info("[lighter] the Lighter channel multiplies the saturation by {} and adds {} to the brightness (read from the game's code)", saturation, brightness);
 }
 
 bool Renderer::generateStaticRenderingBuffer(std::vector<GameObject*>& objects) {

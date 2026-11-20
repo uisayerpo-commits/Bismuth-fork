@@ -190,6 +190,24 @@ void processSprite(uint spriteIndex) {
     if ((objectFlags & OBJECT_FLAG_IS_INVISIBLE_BLOCK) != 0u)
         color = calculateInvisibleBlockColorAndOpacity(color);
 
+    /*
+        The "Lighter" channel (1012) has no color of its own. The game's getActiveColorForMode makes it a lighter
+        version of the color of the object itself: the color of the channel for a base sprite, the color of the
+        main sprite (the base channel with its HSV) for a detail sprite. The detail HSV comes after that.
+    */
+    if (colorChannel == uint(COLOR_CHANNEL_LIGHTER) && u_lighterHSV != 0u) {
+        vec4 ownColor = color;
+
+        if (spriteType == SPRITE_TYPE_DETAIL) {
+            uint baseChannel = min(object.baseColorChannelId, uint(COLOR_CHANNEL_COUNT - 1));
+            ownColor = RGBA_TO_VEC4(u_channelColors[baseChannel]);
+            if ((objectFlags & OBJECT_FLAG_HAS_BASE_HSV) != 0u)
+                ownColor = applyHSV(object.baseHSV, ownColor);
+        }
+
+        color = vec4(applyHSV(u_lighterHSV, ownColor).rgb, color.a);
+    }
+
     if (spriteType == SPRITE_TYPE_BASE && (objectFlags & OBJECT_FLAG_HAS_BASE_HSV) != 0u) {
         color = applyHSV(object.baseHSV, color);
     } else if (spriteType == SPRITE_TYPE_DETAIL && (objectFlags & OBJECT_FLAG_HAS_DETAIL_HSV) != 0u) {

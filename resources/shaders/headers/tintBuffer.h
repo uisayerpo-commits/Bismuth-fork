@@ -29,6 +29,9 @@
 UNIFORM_BUFFER(TINT_BUFFER_BINDING) TintBuffer {
     uint u_tintCount;
     uint u_fadeCount;
+    // The HSV (packed like ObjectInfo::baseHSV) that turns the color of an object into the color of the
+    // "Lighter" channel (1012). 0 when the game's values couldn't be read, see Renderer::setupLighterColor
+    uint u_lighterHSV;
     vec4 u_tintData[TINT_DATA_VEC4_COUNT];
     vec4 u_fadeData[FADE_DATA_VEC4_COUNT];
     vec4 u_tintVariance[TINT_VARIANCE_VEC4S];

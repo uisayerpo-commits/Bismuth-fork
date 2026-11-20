@@ -339,6 +339,8 @@ private:
     void tintWarnOnce(int id, const std::string& message);
     void checkTintLayout(EnterEffectInstance* instance);
     void logTintSelfTest();
+    // The values of the "Lighter" color channel, read from the game's code
+    void setupLighterColor();
 
     bool differenceModeEnabled = false;
     DifferenceMode differenceMode;
