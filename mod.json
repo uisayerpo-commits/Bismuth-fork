@@ -6,7 +6,7 @@
 	},
 	"id": "iliashdz.bismuth",
 	"name": "Bismuth (experimental)",
-	"version": "v0.1.0-alpha.29",
+	"version": "v0.1.0-alpha.30",
 	"developer": "IliasHDZ",
 	"description": "Rendering optimization mod",
 	"dependencies": {
@@ -77,11 +77,17 @@
 			"default": true,
 			"description": "Particle objects (fog, smoke) in a group that a toggle trigger turned off are deactivated like the game does, without running its whole pre-visibility step. Next level load."
 		},
+		"fade_triggers": {
+			"name": "Area fade triggers",
+			"type": "bool",
+			"default": true,
+			"description": "Draws area fade triggers in the GPU rendering. Next level load."
+		},
 		"tint_triggers": {
 			"name": "Area tint triggers",
 			"type": "bool",
 			"default": true,
-			"description": "Draws area tint triggers in the GPU rendering (RGB tint, no HSV yet). Also skips the game's CPU work for area tint and area fade. Next level load."
+			"description": "Draws area tint triggers in the GPU rendering (RGB tint, no HSV yet). Also skips the game's CPU work for area tint. Next level load."
 		},
 		"debug_keep_optimizations": {
 			"name": "Keep optimizations with debug tools",

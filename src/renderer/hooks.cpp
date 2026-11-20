@@ -184,14 +184,13 @@ class $modify(RendererGJBaseGameLayer, GJBaseGameLayer) {
             GJBaseGameLayer::processAreaTintGroupAction(objects, instance, position, targetGroups);
     }
 
-    // Area fade only sets the opacity of the CPU objects, which the GPU renderer doesn't use (yet).
-    // Skipping it saves a loop over every object in the target groups.
+    // Same for area fade, which sets the opacity of the objects
     void processAreaFadeGroupAction(CCArray* objects, EnterEffectInstance* instance, CCPoint position, bool targetGroups) {
         auto renderer = Renderer::get();
-        if (renderer && renderer->getTintOnGPU() && renderer->useOptimizations())
-            return;
+        bool captured = renderer && renderer->captureFadeInstance(instance, position, targetGroups);
 
-        GJBaseGameLayer::processAreaFadeGroupAction(objects, instance, position, targetGroups);
+        if (!captured || !renderer->useOptimizations())
+            GJBaseGameLayer::processAreaFadeGroupAction(objects, instance, position, targetGroups);
     }
 
     void processMoveActions() {

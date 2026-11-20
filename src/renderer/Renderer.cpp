@@ -94,6 +94,7 @@ bool Renderer::init(PlayLayer* layer, CCArray* levelObjects) {
     visPreUpdate        = Mod::get()->getSettingValue<bool>("vis_pre_update");
     visEnterArea        = Mod::get()->getSettingValue<bool>("vis_enter_area");
     tintOnGPU           = Mod::get()->getSettingValue<bool>("tint_triggers");
+    fadeOnGPU           = Mod::get()->getSettingValue<bool>("fade_triggers");
     hideDisabledParticles = Mod::get()->getSettingValue<bool>("hide_disabled_particles");
     keepOptimizationsInDebug = Mod::get()->getSettingValue<bool>("debug_keep_optimizations");
     blog::info(
@@ -296,6 +297,8 @@ bool Renderer::init(PlayLayer* layer, CCArray* levelObjects) {
     tintBufferObject->write(tintData.get(), sizeof(TintBuffer));
     tintFrameCount = 0;
     tintUploadedCount = 0;
+    fadeFrameCount = 0;
+    fadeUploadedCount = 0;
     logTintSelfTest();
 
     blog::info("Generating vertex buffer...");
@@ -715,19 +718,23 @@ void Renderer::prepareShaderUniforms() {
 
     gameStateBuffer->write(&gameState, sizeof(gameState));
 
-    // The area tint instances captured this frame. Nothing is written while there are none, and the
+    // The area tint and fade instances captured this frame. Nothing is written while there are none, and the
     // frame after the last one went away writes the zero count.
-    if (tintBufferObject && tintData && (tintFrameCount > 0 || tintUploadedCount > 0)) {
+    bool tintOrFadeUsed = tintFrameCount > 0 || fadeFrameCount > 0;
+    bool tintOrFadeWas = tintUploadedCount > 0 || fadeUploadedCount > 0;
+    if (tintBufferObject && tintData && (tintOrFadeUsed || tintOrFadeWas)) {
         tintData->u_tintCount = tintFrameCount;
+        tintData->u_fadeCount = fadeFrameCount;
 
         // The game's table of random numbers (variance), the shader reads the index of every object
-        if (tintFrameCount > 0) {
+        if (tintOrFadeUsed) {
             static_assert(sizeof(tintData->u_tintVariance) == TINT_VARIANCE_COUNT * sizeof(float), "variance table size");
             std::memcpy(tintData->u_tintVariance, layer->m_varianceValues.data(), TINT_VARIANCE_COUNT * sizeof(float));
         }
 
         tintBufferObject->write(tintData.get(), sizeof(TintBuffer));
         tintUploadedCount = tintFrameCount;
+        fadeUploadedCount = fadeFrameCount;
     }
 }
 
@@ -1512,7 +1519,7 @@ bool Renderer::captureTintInstance(EnterEffectInstance* instance, const CCPoint&
     if (slot == GroupManager::TINT_SLOT_NO_OBJECTS)
         return true; // no object to tint
     if (slot < 0) {
-        tintWarnOnce(3, "an area tint trigger targets a 33rd different group, only 32 are drawn on the GPU");
+        tintWarnOnce(3, "area tint and area fade target a 65th different group, only 64 are drawn on the GPU");
         return false;
     }
 
@@ -1521,20 +1528,7 @@ bool Renderer::captureTintInstance(EnterEffectInstance* instance, const CCPoint&
         return false;
     }
 
-    // The center the game worked out already has the trigger's offset in it. When the center is an
-    // object, the game used the position of the object on the CPU, which doesn't follow the move and
-    // rotate triggers that run on the GPU. Replace that part with where the object is drawn.
-    glm::vec2 center = ccPointToGLM(position);
-
-    i32 centerId = tintRead<i32>(effect, 0x5f4);
-    if (centerId == 0)
-        centerId = tintRead<i32>(instance, 0xd0);
-
-    if (centerId > 0) {
-        GameObject* centerObject = layer->tryGetMainObject(centerId);
-        if (centerObject)
-            center += groupManager.getObjectPosition(centerObject) - ccPointToGLM(centerObject->getRealPosition());
-    }
+    glm::vec2 center = getAreaEffectCenter(instance, effect, position);
 
     ccColor3B tintColor = layer->m_effectManager->activeColorForIndex(tintRead<i32>(effect, 0x794));
 
@@ -1557,5 +1551,72 @@ bool Renderer::captureTintInstance(EnterEffectInstance* instance, const CCPoint&
     data[3] = glm::vec4(tintColor.b / 255.0f, (float)slot, (float)mode, (float)flags);
 
     tintFrameCount++;
+    return true;
+}
+
+glm::vec2 Renderer::getAreaEffectCenter(EnterEffectInstance* instance, void* effect, const CCPoint& position) {
+    // The center the game worked out already has the trigger's offset in it. When the center is an
+    // object, the game used the position of the object on the CPU, which doesn't follow the move and
+    // rotate triggers that run on the GPU. Replace that part with where the object is drawn.
+    glm::vec2 center = ccPointToGLM(position);
+
+    i32 centerId = tintRead<i32>(effect, 0x5f4);
+    if (centerId == 0)
+        centerId = tintRead<i32>(instance, 0xd0);
+
+    if (centerId > 0) {
+        GameObject* centerObject = layer->tryGetMainObject(centerId);
+        if (centerObject)
+            center += groupManager.getObjectPosition(centerObject) - ccPointToGLM(centerObject->getRealPosition());
+    }
+
+    return center;
+}
+
+bool Renderer::captureFadeInstance(EnterEffectInstance* instance, const CCPoint& position, bool targetGroups) {
+    if (!getFadeOnGPU() || !tintData || !instance)
+        return false;
+
+    // Instance offsets are the same as for tint, 0x98 is the "to" opacity and 0x9c the "from" opacity
+    auto* effect = tintRead<void*>(instance, 0xc0);
+    if (!effect)
+        return false;
+
+    if (targetGroups || tintRead<i32>(instance, 0xe0) > 0) {
+        tintWarnOnce(11, "an area fade trigger uses a target group index (linked group), that is not drawn on the GPU");
+        return false;
+    }
+
+    i32 slot = groupManager.getTintSlot(tintRead<i32>(instance, 0xcc));
+    if (slot == GroupManager::TINT_SLOT_NO_OBJECTS)
+        return true; // no object to fade
+    if (slot < 0) {
+        tintWarnOnce(3, "area tint and area fade target a 65th different group, only 64 are drawn on the GPU");
+        return false;
+    }
+
+    if (fadeFrameCount >= FADE_MAX_INSTANCES) {
+        tintWarnOnce(12, "more than 48 area fade instances are active at once, the rest is not drawn on the GPU");
+        return false;
+    }
+
+    glm::vec2 center = getAreaEffectCenter(instance, effect, position);
+
+    i32 mode = tintRead<i32>(effect, 0x79c);
+    if (mode != 1 && mode != 2)
+        mode = 0;
+
+    float reversed = tintRead<u8>(effect, 0x7c8) != 0 ? 1.0f : 0.0f;
+
+    glm::vec4* data = &tintData->u_fadeData[fadeFrameCount * 4];
+    data[0] = glm::vec4(center.x, center.y, tintRead<float>(instance, 0x30), tintRead<float>(instance, 0x34));
+    data[1] = glm::vec4(
+        tintRead<float>(instance, 0x3c), tintRead<float>(instance, 0x44),
+        tintRead<float>(instance, 0x48), tintRead<float>(instance, 0x4c)
+    );
+    data[2] = glm::vec4(tintRead<float>(instance, 0x50), tintRead<float>(instance, 0x9c), tintRead<float>(instance, 0x98), (float)slot);
+    data[3] = glm::vec4((float)mode, reversed, 0.0f, 0.0f);
+
+    fadeFrameCount++;
     return true;
 }

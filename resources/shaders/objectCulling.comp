@@ -131,7 +131,8 @@ bool isObjectOnScreen();
 float calculateAudioScale();
 vec4 calculateInvisibleBlockColorAndOpacity(vec4 color);
 vec4 applyHSV(HSV hsvValue, vec4 color);
-vec3 applyAreaTint(vec3 rgb, uint tintMask, uint varianceIndex);
+vec3 applyAreaTint(vec3 rgb, uint tintMask, uint tintMask2, uint varianceIndex);
+float applyAreaFade(uint tintMask, uint tintMask2, uint varianceIndex);
 
 //// PROCESS SPRITE FUNCTION ////
 void processSprite(uint spriteIndex) {
@@ -196,8 +197,9 @@ void processSprite(uint spriteIndex) {
     }
 
     // Area tint triggers, applied on top of the object's own color like the game does
-    if (state.tintMask != 0u && u_tintCount != 0u && (spriteType == SPRITE_TYPE_BASE || spriteType == SPRITE_TYPE_DETAIL))
-        color.rgb = applyAreaTint(color.rgb, state.tintMask, object.varianceIndex);
+    bool hasAreaEffect = (state.tintMask | state.tintMask2) != 0u;
+    if (hasAreaEffect && u_tintCount != 0u && (spriteType == SPRITE_TYPE_BASE || spriteType == SPRITE_TYPE_DETAIL))
+        color.rgb = applyAreaTint(color.rgb, state.tintMask, state.tintMask2, object.varianceIndex);
 
     #ifdef BISMUTH_DIAGNOSTICS
     if ((u_gameStateFlags & GAME_STATE_COLLECT_DIAGNOSTICS) != 0u)
@@ -205,6 +207,10 @@ void processSprite(uint spriteIndex) {
     #endif
 
     color.a *= state.opacity * object.opacity;
+
+    // Area fade triggers set the opacity of the object, on top of its own
+    if (hasAreaEffect && u_fadeCount != 0u)
+        color.a *= applyAreaFade(state.tintMask, state.tintMask2, object.varianceIndex);
 
     // The "Glow strength" setting
     if (spriteType == SPRITE_TYPE_GLOW)
@@ -434,25 +440,74 @@ vec4 calculateInvisibleBlockColorAndOpacity(vec4 color) {
     return color;
 }
 
-//// AREA TINT ////
-float tintVariance(uint index) {
+//// AREA EFFECTS (TINT AND FADE) ////
+float areaVariance(uint index) {
     index = min(index, uint(TINT_VARIANCE_COUNT - 1));
     return u_tintVariance[index >> 2u][index & 3u];
+}
+
+bool areaSlotIsSet(uint slot, uint tintMask, uint tintMask2) {
+    slot = min(slot, 63u);
+    uint mask = slot < 32u ? tintMask : tintMask2;
+    return (mask & (1u << (slot & 31u))) != 0u;
+}
+
+/*
+    How far this object is into the area effect: the distance to the center divided by the length, with the
+    random variance, mod front and back and the deadzone, the way the game's processAreaTintGroupAction and
+    processAreaFadeGroupAction work it out (they share it). Not clamped.
+*/
+float areaEffectRatio(vec4 v0, vec4 v1, float deadzone, uint mode, uint varianceIndex) {
+    // The length is cut to a whole number, with the random variance in it
+    float areaLength = v0.z;
+    if (v0.w != 0.0)
+        areaLength += v0.w * areaVariance(varianceIndex);
+    areaLength = float(int(areaLength));
+
+    float offsetVariance = v1.x * areaVariance(varianceIndex + 1u);
+
+    float dist;
+    if (mode == 1u) {
+        dist = objectPosition.x - v0.x + offsetVariance;
+    } else if (mode == 2u) {
+        dist = objectPosition.y - v0.y + offsetVariance;
+    } else {
+        vec2 center = vec2(v0.x + offsetVariance, v0.y + v1.y * areaVariance(varianceIndex + 2u));
+        dist = distance(objectPosition, center);
+    }
+
+    if (mode == 1u || mode == 2u)
+        dist *= (dist < 0.0) ? v1.z : v1.w;
+
+    // dist / length, the way a CPU float divide would give it, also for a length of 0
+    float q;
+    if (abs(areaLength) < 1e-6)
+        q = (dist > 0.0) ? 1e9 : ((dist < 0.0) ? -1e9 : 0.0);
+    else
+        q = dist / areaLength;
+
+    if (deadzone != 0.0) {
+        float denom = 1.0 - deadzone;
+        if (abs(denom) < 1e-6)
+            denom = 1e-6;
+        q = (q - deadzone) / denom;
+    }
+
+    return q;
 }
 
 /*
     The game's processAreaTintGroupAction, for one object. The instances are in the order the game
     walks them, every one mixes on top of the result of the one before it.
 */
-vec3 applyAreaTint(vec3 rgb, uint tintMask, uint varianceIndex) {
+vec3 applyAreaTint(vec3 rgb, uint tintMask, uint tintMask2, uint varianceIndex) {
     bool isBase = spriteType == SPRITE_TYPE_BASE;
     uint count = min(u_tintCount, uint(TINT_MAX_INSTANCES));
 
     for (uint i = 0u; i < count; i++) {
         vec4 v3 = u_tintData[i * 4u + 3u];
 
-        uint slot = min(uint(v3.y), 31u);
-        if ((tintMask & (1u << slot)) == 0u)
+        if (!areaSlotIsSet(uint(v3.y), tintMask, tintMask2))
             continue;
 
         uint flags = uint(v3.w);
@@ -463,42 +518,7 @@ vec3 applyAreaTint(vec3 rgb, uint tintMask, uint varianceIndex) {
         vec4 v1 = u_tintData[i * 4u + 1u];
         vec4 v2 = u_tintData[i * 4u + 2u];
 
-        // The length is cut to a whole number, with the random variance in it
-        float tintLength = v0.z;
-        if (v0.w != 0.0)
-            tintLength += v0.w * tintVariance(varianceIndex);
-        tintLength = float(int(tintLength));
-
-        float offsetVariance = v1.x * tintVariance(varianceIndex + 1u);
-
-        uint mode = uint(v3.z);
-        float dist;
-        if (mode == 1u) {
-            dist = objectPosition.x - v0.x + offsetVariance;
-        } else if (mode == 2u) {
-            dist = objectPosition.y - v0.y + offsetVariance;
-        } else {
-            vec2 center = vec2(v0.x + offsetVariance, v0.y + v1.y * tintVariance(varianceIndex + 2u));
-            dist = distance(objectPosition, center);
-        }
-
-        if (mode == 1u || mode == 2u)
-            dist *= (dist < 0.0) ? v1.z : v1.w;
-
-        // dist / tintLength, the way a CPU float divide would give it, also for a length of 0
-        float q;
-        if (abs(tintLength) < 1e-6)
-            q = (dist > 0.0) ? 1e9 : ((dist < 0.0) ? -1e9 : 0.0);
-        else
-            q = dist / tintLength;
-
-        float deadzone = v2.x;
-        if (deadzone != 0.0) {
-            float denom = 1.0 - deadzone;
-            if (abs(denom) < 1e-6)
-                denom = 1e-6;
-            q = (q - deadzone) / denom;
-        }
+        float q = areaEffectRatio(v0, v1, v2.x, uint(v3.z), varianceIndex);
 
         bool reversed = (flags & 1u) != 0u;
         float t;
@@ -523,4 +543,39 @@ vec3 applyAreaTint(vec3 rgb, uint tintMask, uint varianceIndex) {
     }
 
     return rgb;
+}
+
+/*
+    The game's processAreaFadeGroupAction and GameObject::setAreaOpacity, for one object. The opacity factor
+    is from + t * (to - from). When several instances fade the object in a frame, the one with the lowest t wins
+    (the first one when they are equal), they don't multiply.
+*/
+float applyAreaFade(uint tintMask, uint tintMask2, uint varianceIndex) {
+    uint count = min(u_fadeCount, uint(FADE_MAX_INSTANCES));
+    float lowestT = 2.0;
+    float factor = 1.0;
+
+    for (uint i = 0u; i < count; i++) {
+        vec4 v2 = u_fadeData[i * 4u + 2u];
+
+        if (!areaSlotIsSet(uint(v2.w), tintMask, tintMask2))
+            continue;
+
+        vec4 v0 = u_fadeData[i * 4u];
+        vec4 v1 = u_fadeData[i * 4u + 1u];
+        vec4 v3 = u_fadeData[i * 4u + 3u];
+
+        float q = areaEffectRatio(v0, v1, v2.x, uint(v3.x), varianceIndex);
+
+        float t = q >= 1.0 ? 1.0 : (q <= 0.0 ? 0.0 : q);
+        if (uint(v3.y) != 0u)
+            t = 1.0 - t;
+
+        if (t < lowestT) {
+            lowestT = t;
+            factor = v2.y + t * (v2.z - v2.y);
+        }
+    }
+
+    return factor;
 }

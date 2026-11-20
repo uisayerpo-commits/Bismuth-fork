@@ -153,8 +153,11 @@ bool GroupManager::initWithObjects(cocos2d::CCArray* objects) {
 
     groupStates.clear();
     groupStates.resize(groupCombinationCount);
-    for (auto& groupState : groupStates)
+    for (auto& groupState : groupStates) {
         groupState.tintMask = 0;
+        groupState.tintMask2 = 0;
+        groupState._padding = 0;
+    }
     tintSlotGroups.clear();
     groupStatesDirty = true;
 
@@ -200,14 +203,18 @@ i32 GroupManager::getTintSlot(i32 groupId) {
             return (i32)i;
     }
 
-    if (tintSlotGroups.size() >= 32)
+    if (tintSlotGroups.size() >= 64)
         return TINT_SLOT_FULL;
 
     i32 slot = (i32)tintSlotGroups.size();
     tintSlotGroups.push_back((GroupID)groupId);
 
-    for (auto combIndex : combinations)
-        groupStates[combIndex].tintMask |= (1u << slot);
+    for (auto combIndex : combinations) {
+        if (slot < 32)
+            groupStates[combIndex].tintMask |= (1u << slot);
+        else
+            groupStates[combIndex].tintMask2 |= (1u << (slot - 32));
+    }
     groupStatesDirty = true;
 
     return slot;

@@ -57,6 +57,7 @@ private:
     bool visPreUpdate = false;
     bool visEnterArea = false;
     bool tintOnGPU = true;
+    bool fadeOnGPU = true;
     bool hideDisabledParticles = true;
     // Debug tools normally switch the CPU optimizations off, this keeps them on
     bool keepOptimizationsInDebug = false;
@@ -202,14 +203,17 @@ public:
     // Area tint triggers drawn by the culling shader. The game's processAreaVisualActions is still
     // what walks the instances (it animates their values), see captureTintInstance.
     inline bool getTintOnGPU() const { return tintOnGPU && enabled; }
+    inline bool getFadeOnGPU() const { return fadeOnGPU && enabled; }
     // Called once a frame before the game goes through its area effects
-    inline void tintBeginFrame() { tintFrameCount = 0; }
+    inline void tintBeginFrame() { tintFrameCount = 0; fadeFrameCount = 0; }
     /*
         Called from the hook of GJBaseGameLayer::processAreaTintGroupAction. Remembers the instance for
         the shader. Returns false when this instance can't be drawn on the GPU (it is logged once), the
         game's own code has to run for it.
     */
     bool captureTintInstance(EnterEffectInstance* instance, const cocos2d::CCPoint& position, bool targetGroups);
+    // The same for GJBaseGameLayer::processAreaFadeGroupAction
+    bool captureFadeInstance(EnterEffectInstance* instance, const cocos2d::CCPoint& position, bool targetGroups);
     inline bool useOptVisibility() { return optVisibility && useOptimizations(); }
     inline bool useOptRotation() { return optRotation && useOptimizations(); }
     inline bool useOptMove() { return optMove && useOptimizations(); }
@@ -325,6 +329,10 @@ private:
     Buffer* tintBufferObject = nullptr;
     u32 tintFrameCount = 0;
     u32 tintUploadedCount = 0;
+    u32 fadeFrameCount = 0;
+    u32 fadeUploadedCount = 0;
+    // What both area effects share: the center of the effect for the instance, in the world
+    glm::vec2 getAreaEffectCenter(EnterEffectInstance* instance, void* effect, const cocos2d::CCPoint& position);
     std::set<int> tintWarnings;
     void tintWarnOnce(int id, const std::string& message);
     void checkTintLayout(EnterEffectInstance* instance);

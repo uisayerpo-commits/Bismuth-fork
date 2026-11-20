@@ -9,8 +9,11 @@ struct GroupCombinationState {
     mat2 localTransform;
     vec2 offset;
     float opacity;
-    // Bit N is set when the group combination contains the target group of area tint slot N (see tintBuffer.h)
+    // Bit N of the first mask, N - 32 of the second, is set when the group combination contains the
+    // target group of area effect slot N (area tint and area fade, see tintBuffer.h)
     uint tintMask;
+    uint tintMask2;
+    uint _padding;
 };
 
 #ifndef NO_STORAGE_BUFFERS

@@ -367,9 +367,9 @@ void decomp_PlayLayer::optimized_updateVisibility(float delta) {
     if (doEnterArea) {
         updateEnterEffects(delta);
         processAreaVisualActions(delta);
-    } else if (renderer && renderer->getTintOnGPU()) {
-        // This walks the area tint instances, the hook of processAreaTintGroupAction hands them to the
-        // renderer. It also animates the values of the instances, which is why it has to run.
+    } else if (renderer && (renderer->getTintOnGPU() || renderer->getFadeOnGPU())) {
+        // This walks the area tint and fade instances, the hooks of processAreaTintGroupAction and
+        // processAreaFadeGroupAction hand them to the renderer. It also animates the values of the instances, which is why it has to run.
         processAreaVisualActions(delta);
     }
     // The game's preUpdateVisibility deactivates the objects whose group is turned off, the particle
