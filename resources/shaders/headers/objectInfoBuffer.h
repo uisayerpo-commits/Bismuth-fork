@@ -9,6 +9,7 @@
 #define OBJECT_FLAG_HAS_BASE_HSV       (1u << 6)
 #define OBJECT_FLAG_HAS_DETAIL_HSV     (1u << 7)
 #define OBJECT_FLAG_IS_STATIC_OBJECT   (1u << 8)
+#define OBJECT_FLAG_HAS_STATIC_GLOW_COLOR (1u << 9)
 
 /*
     Rendering info of an object that never changes.
@@ -29,6 +30,13 @@ struct ObjectInfo {
     uint groupCombinationIndex;
     // The game's per-object index into its table of random numbers (area effect variance)
     uint varianceIndex;
+    // The opacity of the glow sprite of the object (m_opacityMod)
+    float glowOpacity;
+    // The opacity of the black children of the object (m_blackChildOpacity)
+    float blackChildOpacity;
+    // The color of the glow sprite when the object can't color its glow (r in the lowest byte)
+    uint staticGlowColor;
+    uint _padding;
 };
 
 /*

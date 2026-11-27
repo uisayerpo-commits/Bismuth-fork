@@ -4,6 +4,13 @@
 #include "glm/ext/matrix_transform.hpp"
 #include <Geode/binding/EffectGameObject.hpp>
 #include <Geode/binding/GameObject.hpp>
+#include <Geode/binding/GJEffectManager.hpp>
+#include <Geode/binding/PulseEffectAction.hpp>
+#include <map>
+#include <unordered_map>
+#include <unordered_set>
+#include <cstring>
+#include <algorithm>
 #include "../profiler.hpp"
 #include <optional>
 #include <string>
@@ -156,7 +163,7 @@ bool GroupManager::initWithObjects(cocos2d::CCArray* objects) {
     for (auto& groupState : groupStates) {
         groupState.tintMask = 0;
         groupState.tintMask2 = 0;
-        groupState._padding = 0;
+        groupState.pulseIndex = 0;
     }
     tintSlotGroups.clear();
     groupStatesDirty = true;
@@ -227,6 +234,135 @@ glm::vec2 GroupManager::getObjectPosition(GameObject* object) {
 
     auto& state = groupStates[index];
     return state.positionalTransform * ccPointToGLM(object->getStartPos()) + state.offset;
+}
+
+static void appendPulseEntry(std::vector<u32>& words, const PulseEffectAction& action) {
+    auto floatBits = [](float value) {
+        u32 bits;
+        std::memcpy(&bits, &value, sizeof(bits));
+        return bits;
+    };
+
+    u32 flags = (u32)(std::clamp(action.m_currentValue, 0.0f, 1.0f) * 65535.0f) & 0xffffu;
+    if (action.m_mainOnly)   flags |= PULSE_FLAG_BASE_ONLY;
+    if (action.m_detailOnly) flags |= PULSE_FLAG_DETAIL_ONLY;
+
+    u32 word1 = 0, word2 = 0, word3 = 0;
+
+    if (action.m_pulseEffectType == PulseEffectType::Hsv) {
+        flags |= PULSE_FLAG_HSV;
+        if (action.m_isDynamicHsv)                flags |= PULSE_FLAG_DYNAMIC_HSV;
+        if (action.m_hsv.absoluteSaturation)      flags |= PULSE_FLAG_SAT_ADD;
+        if (action.m_hsv.absoluteBrightness)      flags |= PULSE_FLAG_VAL_ADD;
+        flags |= ((u32)action.m_colorIndex & 0x3ffu) << 16;
+
+        word1 = floatBits(action.m_hsv.h);
+        word2 = floatBits(action.m_hsv.s);
+        word3 = floatBits(action.m_hsv.v);
+    } else {
+        word1 = (u32)action.m_color.r | ((u32)action.m_color.g << 8) | ((u32)action.m_color.b << 16) | (255u << 24);
+    }
+
+    words.push_back(flags);
+    words.push_back(word1);
+    words.push_back(word2);
+    words.push_back(word3);
+}
+
+bool GroupManager::updatePulseEntries(GJEffectManager* effectManager) {
+    // The pulses that do something right now, per group
+    struct PulsingGroup {
+        GroupID gid;
+        std::vector<const PulseEffectAction*> actions;
+    };
+    std::vector<PulsingGroup> pulsingGroups;
+
+    // The game keeps a flag for every group that has pulse effects
+    usize groupCount = std::min<usize>(effectManager->m_unkVector2f0.size(), groupCombinationIndiciesPerGroupId.size());
+    for (usize gid = 0; gid < groupCount; gid++) {
+        if (!effectManager->m_unkVector2f0[gid] || groupCombinationIndiciesPerGroupId[gid].empty())
+            continue;
+
+        PulsingGroup group;
+        group.gid = (GroupID)gid;
+        for (const auto& action : effectManager->m_pulseEffectMap[(int)gid]) {
+            if (action.m_pulseEffectType != PulseEffectType::Hsv && action.m_pulseEffectType != PulseEffectType::Color)
+                continue;
+            if (!(action.m_currentValue > 0.0f))
+                continue;
+            group.actions.push_back(&action);
+        }
+
+        if (!group.actions.empty())
+            pulsingGroups.push_back(std::move(group));
+    }
+
+    // Nothing pulses and nothing did last time, the usual case
+    if (pulsingGroups.empty() && pulsingCombinations.empty() && pulseWords.empty())
+        return false;
+
+    // Which of the pulsing groups every group combination has
+    std::map<GroupCombinationIndex, std::vector<u32>> pulsingGroupsPerCombination;
+    for (u32 i = 0; i < pulsingGroups.size(); i++) {
+        for (auto combIndex : groupCombinationIndiciesPerGroupId[pulsingGroups[i].gid])
+            pulsingGroupsPerCombination[combIndex].push_back(i);
+    }
+
+    // Combinations with the same pulsing groups share their entries
+    std::vector<u32> words;
+    std::map<std::vector<u32>, u32> pulseIndexPerList;
+    std::vector<GroupCombinationIndex> newPulsingCombinations;
+    u32 entryCount = 0;
+
+    for (auto& [combIndex, list] : pulsingGroupsPerCombination) {
+        u32 pulseIndex = 0;
+
+        auto found = pulseIndexPerList.find(list);
+        if (found != pulseIndexPerList.end()) {
+            pulseIndex = found->second;
+        } else {
+            u32 count = 0;
+            for (u32 i : list)
+                count += (u32)pulsingGroups[i].actions.size();
+
+            if (count > 0 && count < 4096 && entryCount + count <= PULSE_ENTRY_CAPACITY) {
+                pulseIndex = entryCount | (count << 20);
+                for (u32 i : list) {
+                    for (auto action : pulsingGroups[i].actions)
+                        appendPulseEntry(words, *action);
+                }
+                entryCount += count;
+            } else if (!pulseOverflowWarned) {
+                pulseOverflowWarned = true;
+                geode::log::warn("[pulses] too many group pulses at once ({} entries), some are not drawn", entryCount + count);
+            }
+
+            pulseIndexPerList[list] = pulseIndex;
+        }
+
+        if (pulseIndex == 0)
+            continue;
+
+        newPulsingCombinations.push_back(combIndex);
+        if (groupStates[combIndex].pulseIndex != pulseIndex) {
+            groupStates[combIndex].pulseIndex = pulseIndex;
+            groupStatesDirty = true;
+        }
+    }
+
+    // The combinations that pulsed before and don't now
+    std::unordered_set<GroupCombinationIndex> stillPulsing(newPulsingCombinations.begin(), newPulsingCombinations.end());
+    for (auto combIndex : pulsingCombinations) {
+        if (stillPulsing.count(combIndex) == 0 && groupStates[combIndex].pulseIndex != 0) {
+            groupStates[combIndex].pulseIndex = 0;
+            groupStatesDirty = true;
+        }
+    }
+    pulsingCombinations = std::move(newPulsingCombinations);
+
+    bool changed = words != pulseWords;
+    pulseWords = std::move(words);
+    return changed;
 }
 
 void GroupManager::fetchVanilaRotateGroups() {

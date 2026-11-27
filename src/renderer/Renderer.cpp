@@ -4,7 +4,7 @@
 #include <Geode/binding/EnterEffectObject.hpp>
 #include <Geode/binding/ParticleGameObject.hpp>
 #include <Geode/binding/GameToolbox.hpp>
-#include <Geode/loader/Addresser.hpp>
+#include <dlfcn.h>
 #include <cstring>
 #include <chrono>
 #include <set>
@@ -278,7 +278,7 @@ bool Renderer::init(PlayLayer* layer, CCArray* levelObjects) {
         return false;
     }
 
-    colorChannelBufferObject = Buffer::createDynamicDraw("Color channel buffer", sizeof(ColorChannelBuffer));
+    colorChannelBufferObject = Buffer::createDynamicDraw("Color channel buffer", sizeof(ColorChannelBuffer) + PULSE_ENTRY_CAPACITY * PULSE_ENTRY_WORDS * sizeof(u32));
     if (!colorChannelBufferObject)
         return false;
 
@@ -828,7 +828,8 @@ void Renderer::setupLighterColor() {
     */
     tintData->u_lighterHSV = 0;
 
-    auto function = (const u8*)geode::addresser::getNonVirtual(&GameObject::getActiveColorForMode);
+    // GameObject::getActiveColorForMode(int, bool), the game's library exports it by this name
+    auto function = (const u8*)dlsym(RTLD_DEFAULT, "_ZN10GameObject21getActiveColorForModeEib");
     if (!function) {
         geode::log::warn("[lighter] couldn't find GameObject::getActiveColorForMode, the Lighter channel keeps its own color");
         return;
@@ -897,6 +898,18 @@ bool Renderer::generateStaticRenderingBuffer(std::vector<GameObject*>& objects) 
         }
 
         objectInfo->opacity = (object->m_opacityMod2 > 0.0) ? object->m_opacityMod2 : 1.0;
+        objectInfo->glowOpacity = object->m_opacityMod;
+
+        objectInfo->blackChildOpacity = 1.0f;
+        if (object->m_hasCustomChild && !object->m_blackChildOpacityLocked && object->m_blackChildOpacity > 0.0f)
+            objectInfo->blackChildOpacity = object->m_blackChildOpacity;
+
+        // An object that can't color its glow draws the glow sprite with the color the game gave it
+        if (object->m_cantColorGlow && object->m_glowSprite) {
+            auto glowColor = object->m_glowSprite->getColor();
+            objectInfo->flags |= OBJECT_FLAG_HAS_STATIC_GLOW_COLOR;
+            objectInfo->staticGlowColor = (u32)glowColor.r | ((u32)glowColor.g << 8) | ((u32)glowColor.b << 16) | (255u << 24);
+        }
 
         objectInfo->groupCombinationIndex = groupManager.getGroupCombinationIndexForObject(object);
         objectInfo->varianceIndex = (u32)std::max<i32>(0, (i32)object->m_varianceIndex);
@@ -967,7 +980,15 @@ void Renderer::draw() {
     prepareShaderUniforms();
     if (!isPaused()) {
         prepareColorChannelBuffer();
-    
+
+        // Pulses on groups: the entries go behind the channels in the color channel buffer, the group
+        // combinations that have them get their pulseIndex (written by prepareGroupStateBuffer)
+        if (groupManager.updatePulseEntries(layer->m_effectManager)) {
+            auto& pulseWords = groupManager.getPulseWords();
+            if (!pulseWords.empty())
+                colorChannelBufferObject->write(pulseWords.data(), pulseWords.size() * sizeof(u32), sizeof(ColorChannelBuffer));
+        }
+
         // auto timer = BProfiler::start("Generate group state buffer");
         groupManager.prepareGroupStateBuffer();
         // timer.end();

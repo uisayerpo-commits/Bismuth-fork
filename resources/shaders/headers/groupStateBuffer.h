@@ -13,7 +13,9 @@ struct GroupCombinationState {
     // target group of area effect slot N (area tint and area fade, see tintBuffer.h)
     uint tintMask;
     uint tintMask2;
-    uint _padding;
+    // Where the pulses of the groups of this combination are in u_pulseWords (see colorChannelBuffer.h):
+    // the first entry in the lower 20 bits, the number of entries above that. 0 when none.
+    uint pulseIndex;
 };
 
 #ifndef NO_STORAGE_BUFFERS

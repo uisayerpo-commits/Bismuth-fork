@@ -1,5 +1,7 @@
 #pragma once
 
+class GJEffectManager;
+
 #include <Geode/binding/GameObject.hpp>
 #include <common.hpp>
 #include <span>
@@ -177,6 +179,17 @@ public:
     */
     glm::vec2 getObjectPosition(GameObject* object);
 
+    //// GROUP PULSES ////
+
+    /*
+        Looks at the pulses the game has on groups right now and sets the pulseIndex of the group combinations
+        that have them. Returns true when the entries (getPulseWords) are not the same as the last time, they go
+        into the color channel buffer behind the channels.
+    */
+    bool updatePulseEntries(GJEffectManager* effectManager);
+
+    inline const std::vector<u32>& getPulseWords() const { return pulseWords; }
+
     //// TRIGGER ACTIONS ////
 
     void moveGroup(GroupID groupId, float deltaX, float deltaY);
@@ -212,6 +225,10 @@ public:
 
 private:
     std::vector<GroupID> tintSlotGroups;
+
+    std::vector<u32> pulseWords;
+    std::vector<GroupCombinationIndex> pulsingCombinations;
+    bool pulseOverflowWarned = false;
 
     void addGroupCombination(GroupCombination& comb, GroupCombinationIndex index);
 

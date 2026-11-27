@@ -11,7 +11,8 @@ enum class SpriteType {
     BASE   = 0,
     DETAIL = 1,
     BLACK  = 2,
-    GLOW   = 3
+    GLOW   = 3,
+    BLACK_CHILD = 4
 };
 
 enum class SpriteSheet {

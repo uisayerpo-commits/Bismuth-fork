@@ -132,13 +132,18 @@ void ObjectUtils::unpackSpriteRecursively(
 ) {
     transform = CCAffineTransformConcat(sprite->nodeToParentTransform(), transform);
 
-    bool isSpriteBlack = (sprite == object) ? object->m_isObjectBlack : object->m_isColorSpriteBlack;
-
-    if (sprite->getTag() == 997)
-        isSpriteBlack = false;
-
     if (sprite == object->m_colorSprite) type = SpriteType::DETAIL;
     if (sprite == object->m_glowSprite)  type = SpriteType::GLOW;
+
+    // The object itself can be black, and the children of its base sprite can be black children, which
+    // have an opacity of their own (blackChildOpacity). The tag 997 sprites are never black.
+    auto parentType = type;
+
+    if (sprite == object) {
+        if (object->m_isObjectBlack)
+            parentType = SpriteType::BLACK;
+    } else if (type == SpriteType::BASE && object->m_isColorSpriteBlack && sprite->getTag() != 997)
+        parentType = SpriteType::BLACK_CHILD;
 
     CCArrayExt<CCSprite*> spriteChildren = sprite->getChildren();
 
@@ -148,7 +153,7 @@ void ObjectUtils::unpackSpriteRecursively(
     }
     
     if (!sprite->getDontDraw())
-        func({sprite, object, isSpriteBlack ? SpriteType::BLACK : type, transform});
+        func({sprite, object, parentType, transform});
 
     for (auto child : spriteChildren) {
         if (child->getZOrder() >= 0)

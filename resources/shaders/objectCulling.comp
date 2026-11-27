@@ -133,6 +133,7 @@ vec4 calculateInvisibleBlockColorAndOpacity(vec4 color);
 vec4 applyHSV(HSV hsvValue, vec4 color);
 vec3 applyAreaTint(vec3 rgb, uint tintMask, uint tintMask2, uint varianceIndex);
 float applyAreaFade(uint tintMask, uint tintMask2, uint varianceIndex);
+vec3 applyGroupPulses(vec3 color, uint pulseIndex, bool isBase);
 
 //// PROCESS SPRITE FUNCTION ////
 void processSprite(uint spriteIndex) {
@@ -174,6 +175,7 @@ void processSprite(uint spriteIndex) {
 
     switch (spriteType) {
     case SPRITE_TYPE_GLOW:
+    case SPRITE_TYPE_BLACK_CHILD:
     case SPRITE_TYPE_BASE:   colorChannel = object.baseColorChannelId; break;
     case SPRITE_TYPE_DETAIL: colorChannel = object.detailColorChannelId; break;
     case SPRITE_TYPE_BLACK:  colorChannel = uint(COLOR_CHANNEL_BLACK); break;
@@ -184,7 +186,9 @@ void processSprite(uint spriteIndex) {
 
     vec4 color = RGBA_TO_VEC4(u_channelColors[colorChannel]);
 
-    if (spriteType == SPRITE_TYPE_GLOW && (objectFlags & OBJECT_FLAG_SPECIAL_GLOW_COLOR) != 0u)
+    if (spriteType == SPRITE_TYPE_GLOW && (objectFlags & OBJECT_FLAG_HAS_STATIC_GLOW_COLOR) != 0u)
+        color = vec4(unpackUnorm4x8(object.staticGlowColor).rgb, color.a);
+    else if (spriteType == SPRITE_TYPE_GLOW && (objectFlags & OBJECT_FLAG_SPECIAL_GLOW_COLOR) != 0u)
         color = vec4(u_specialLightBGColor, 1.0);
     
     if ((objectFlags & OBJECT_FLAG_IS_INVISIBLE_BLOCK) != 0u)
@@ -208,6 +212,13 @@ void processSprite(uint spriteIndex) {
         color = vec4(applyHSV(u_lighterHSV, ownColor).rgb, color.a);
     }
 
+    /*
+        Pulse triggers that target a group, the game's GJEffectManager::colorForGroupID. They come after the
+        channel color and before the HSV of the object. A detail sprite on the Lighter channel doesn't get them.
+    */
+    if (state.pulseIndex != 0u && !(spriteType == SPRITE_TYPE_DETAIL && colorChannel == uint(COLOR_CHANNEL_LIGHTER)))
+        color.rgb = applyGroupPulses(color.rgb, state.pulseIndex, spriteType != SPRITE_TYPE_DETAIL);
+
     if (spriteType == SPRITE_TYPE_BASE && (objectFlags & OBJECT_FLAG_HAS_BASE_HSV) != 0u) {
         color = applyHSV(object.baseHSV, color);
     } else if (spriteType == SPRITE_TYPE_DETAIL && (objectFlags & OBJECT_FLAG_HAS_DETAIL_HSV) != 0u) {
@@ -224,7 +235,15 @@ void processSprite(uint spriteIndex) {
         collectAlphaDiagnostics(colorChannel, color.a, state.opacity, object.opacity);
     #endif
 
+    // Black children are black, only their opacity counts
+    if (spriteType == SPRITE_TYPE_BLACK_CHILD)
+        color.rgb = vec3(0.0);
+
     color.a *= state.opacity * object.opacity;
+
+    // The glow sprite has an opacity of its own
+    if (spriteType == SPRITE_TYPE_GLOW)
+        color.a *= object.glowOpacity;
 
     // Area fade triggers set the opacity of the object, on top of its own
     if (hasAreaEffect && u_fadeCount != 0u)
@@ -235,6 +254,9 @@ void processSprite(uint spriteIndex) {
         color.a *= GLOW_STRENGTH;
 
     color.rgb *= color.a;
+
+    if (spriteType == SPRITE_TYPE_BLACK_CHILD)
+        color.a *= object.blackChildOpacity;
 
     #ifdef BISMUTH_DIAGNOSTICS
     if ((u_gameStateFlags & GAME_STATE_COLLECT_DIAGNOSTICS) != 0u)
@@ -596,4 +618,85 @@ float applyAreaFade(uint tintMask, uint tintMask2, uint varianceIndex) {
     }
 
     return factor;
+}
+
+
+//// GROUP PULSES ////
+// hue in turns, saturation and brightness added when the flags say so, multiplied otherwise
+vec3 applyHSVFloat(vec3 rgb, float hue, float sat, bool satAdd, float val, bool valAdd) {
+    vec3 hsv = rgb2hsv(rgb);
+
+    hsv.x = mod(hsv.x + hue, 1.0);
+
+    if (satAdd)
+        hsv.y += sat;
+    else
+        hsv.y *= sat;
+
+    if (valAdd)
+        hsv.z += val;
+    else
+        hsv.z *= val;
+
+    hsv.y = clamp(hsv.y, 0.0, 1.0);
+    hsv.z = clamp(hsv.z, 0.0, 1.0);
+    return hsv2rgb(hsv);
+}
+
+/*
+    GJEffectManager::colorForPulseEffect for every pulse of the group combination, in order. A color pulse
+    blends the color toward the pulse color by the strength of the pulse, an HSV pulse toward the color with
+    the HSV applied (to the copied channel when there is one).
+*/
+vec3 applyGroupPulses(vec3 color, uint pulseIndex, bool isBase) {
+    uint first = pulseIndex & 0xfffffu;
+    uint count = pulseIndex >> 20u;
+
+    for (uint i = 0u; i < count; i++) {
+        uint entry = (first + i) * uint(PULSE_ENTRY_WORDS);
+        uint flags = u_pulseWords[entry];
+
+        if (isBase) {
+            if ((flags & PULSE_FLAG_DETAIL_ONLY) != 0u)
+                continue;
+        } else {
+            if ((flags & PULSE_FLAG_BASE_ONLY) != 0u)
+                continue;
+        }
+
+        float strength = float(flags & 0xffffu) / 65535.0;
+        if (strength <= 0.0)
+            continue;
+
+        vec3 target;
+
+        if ((flags & PULSE_FLAG_HSV) != 0u) {
+            vec3 source = color;
+
+            uint channel = (flags >> 16u) & 0x3ffu;
+            if (channel != 0u)
+                source = RGBA_TO_VEC4(u_channelColors[min(channel, uint(COLOR_CHANNEL_COUNT - 1))]).rgb;
+
+            float hue = uintBitsToFloat(u_pulseWords[entry + 1u]);
+            float sat = uintBitsToFloat(u_pulseWords[entry + 2u]);
+            float val = uintBitsToFloat(u_pulseWords[entry + 3u]);
+            bool satAdd = (flags & PULSE_FLAG_SAT_ADD) != 0u;
+            bool valAdd = (flags & PULSE_FLAG_VAL_ADD) != 0u;
+
+            // GameToolbox::getMultipliedHSV: scales the HSV by the strength of the pulse
+            if (strength < 1.0 && (flags & PULSE_FLAG_DYNAMIC_HSV) != 0u) {
+                hue *= strength;
+                sat = satAdd ? sat * strength : sat * strength + (1.0 - strength);
+                val = valAdd ? val * strength : val * strength + (1.0 - strength);
+            }
+
+            target = applyHSVFloat(source, hue / 360.0, sat, satAdd, val, valAdd);
+        } else {
+            target = unpackUnorm4x8(u_pulseWords[entry + 1u]).rgb;
+        }
+
+        color = (strength >= 1.0) ? target : mix(color, target, strength);
+    }
+
+    return color;
 }
